@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Mimiry Organizations API",
-    "version": "1.0.0",
+    "version": "1.0",
     "description": "Organization management API for the Mimiry platform. Create and manage\norganizations, invite members, and control access.\n\n## Authentication\n\nAll endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/auth/v1/token`) or portal login.\n\n## Async Operations\n\nMutating operations (create, update, delete, invite, etc.) return\n`202 Accepted` with a `request_id` and a `status_url`. Poll the status\nendpoint, or stream it, to learn the outcome: the `202` means the request\nwas accepted, not that it succeeded. A status is kept for 15 minutes.\n\n```\nPOST /api/organizations/v1 → 202 { request_id, status_url }\nGET  /api/organizations/v1/operations/{request_id} → { status: \"completed\" }\n```\n\n## Roles in an organization\n\n| Role | What it allows |\n|------|----------------|\n| **owner** | Everything below, plus changing members' roles, transferring ownership, winding down and deleting the organization. |\n| **admin** | Changing the organization's name and slug; inviting members; removing members other than the owner; revoking invitations. |\n| **member** | Reading the organization, its members and its pending invitations. Leaving. |\n\nOperations marked **(requires elevated rights)** need one of these rights in\nthe organization. Without it the answer is `403`.\n",
     "contact": {
       "name": "Mimiry Platform",
