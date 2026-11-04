@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/mimiry-com/mimiry-sdk/internal/rpc"
 	"github.com/mimiry-com/mimiry-sdk/mimiry"
 )
 
@@ -43,7 +45,7 @@ func newFakeAPI(t *testing.T, reply string) *fakeAPI {
 	t.Setenv("MIMIRY_SSH_KEY", "")
 	f := &fakeAPI{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/token" {
+		if r.URL.Path == "/api/auth/v1/token" {
 			io.WriteString(w, `{"access_token":"tok","expires_in":300,"user_id":"u-1"}`)
 			return
 		}
@@ -233,7 +235,7 @@ func TestVolumeCommands(t *testing.T) {
 		{[]string{"volume", "create", "--name", "data", "--size", "100"},
 			"POST", "/api/compute/v1/volumes", `{"name":"data","size_gb":100}`},
 		{[]string{"volume", "extend", "v-1", "--size", "200"},
-			"PUT", "/api/compute/v1/volumes/v-1", `{"new_size_gb":200}`},
+			"PATCH", "/api/compute/v1/volumes/v-1", `{"size_gb":200}`},
 		{[]string{"volume", "delete", "v-1"},
 			"DELETE", "/api/compute/v1/volumes/v-1", `null`},
 	} {
@@ -291,7 +293,7 @@ func TestVersionNeedsNoHostOrKey(t *testing.T) {
 	if code := Run(context.Background(), []string{"--version"}, nil, &out, &errOut); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
-	want := "mimiry " + mimiry.Version + " (rpc protocol 1, "
+	want := "mimiry " + mimiry.Version + " (rpc protocol " + fmt.Sprint(rpc.Protocol) + ", "
 	if !strings.HasPrefix(out.String(), want) {
 		t.Errorf("got %q, want it to start %q", out.String(), want)
 	}
@@ -308,7 +310,7 @@ func TestVersionNeedsNoHostOrKey(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("--json output is not JSON: %v: %q", err, out.String())
 	}
-	if got.Version != mimiry.Version || got.Protocol != 1 || !strings.HasPrefix(got.Go, "go") {
+	if got.Version != mimiry.Version || got.Protocol != rpc.Protocol || !strings.HasPrefix(got.Go, "go") {
 		t.Errorf("--json: got %+v", got)
 	}
 }

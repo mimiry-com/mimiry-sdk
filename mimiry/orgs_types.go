@@ -19,13 +19,12 @@ type Org struct {
 	Description string `json:"description,omitempty"`
 	OwnerID     string `json:"owner_id"`
 	// OwnerName is the owner's display name. Set in lists only.
-	OwnerName   string      `json:"owner_name,omitempty"`
-	Members     []Member    `json:"members"`
-	MemberCount int         `json:"member_count"`
-	Settings    OrgSettings `json:"settings"`
-	IsActive    bool        `json:"is_active,omitempty"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	OwnerName   string    `json:"owner_name,omitempty"`
+	Members     []Member  `json:"members"`
+	MemberCount int       `json:"member_count"`
+	IsActive    bool      `json:"is_active,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Member is one member of an organisation.
@@ -35,16 +34,6 @@ type Member struct {
 	Role      OrgRole   `json:"role"`
 	JoinedAt  time.Time `json:"joined_at"`
 	InvitedBy string    `json:"invited_by"`
-}
-
-// OrgSettings are an organisation's settings.
-type OrgSettings struct {
-	// Deprecated: AllowMemberInvites is stored but not in effect: only the
-	// owner and admins can invite, whatever its value.
-	AllowMemberInvites bool `json:"allow_member_invites"`
-	// Deprecated: Require2FA is stored but not enforced. It does not protect
-	// the organisation.
-	Require2FA bool `json:"require_2fa"`
 }
 
 // CreateOrgRequest creates an organisation.

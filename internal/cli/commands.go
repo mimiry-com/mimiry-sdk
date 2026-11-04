@@ -452,7 +452,7 @@ func runQuota(e *env, _ *flag.FlagSet, _ []string) error {
 		return fmt.Sprintf("%g of %g", used, max)
 	}
 	w := table(e.stdout)
-	fmt.Fprintf(w, "Concurrent sessions\t%s\n", limit(float64(q.CurrentJobs), float64(q.MaxConcurrentJobs)))
+	fmt.Fprintf(w, "Concurrent sessions\t%s\n", limit(float64(q.CurrentSessions), float64(q.MaxConcurrentSessions)))
 	fmt.Fprintf(w, "GPU hours today\t%s\n", limit(q.GPUHoursUsedToday, q.MaxGPUHoursDaily))
 	fmt.Fprintf(w, "GPU hours this month\t%s\n", limit(q.GPUHoursUsedMonth, q.MaxGPUHoursMonthly))
 	return w.Flush()

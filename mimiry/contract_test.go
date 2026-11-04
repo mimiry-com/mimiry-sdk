@@ -128,9 +128,7 @@ func jsonFields(t reflect.Type) map[string]bool {
 // Every entry must still match a difference, or the test fails: an exception
 // that excuses nothing hides the next real one.
 var exceptions = map[string]string{
-	"LogsOptions.timestamps":                "deprecated in the document and has no effect; the SDK does not send it",
-	"UpdateOrgRequest.require_2fa":          "deprecated in the document and not enforced; the SDK does not offer to set it",
-	"UpdateOrgRequest.allow_member_invites": "deprecated in the document and not in effect; the SDK does not offer to set it",
+	"LogsOptions.timestamps": "deprecated in the document and has no effect; the SDK does not send it",
 }
 
 func diff(t *testing.T, what string, sdk, doc map[string]bool, used map[string]bool) {
@@ -200,7 +198,6 @@ func TestTypesMatchTheDocument(t *testing.T) {
 		{reflect.TypeFor[Quota](), "compute.json", "#/components/schemas/QuotaInfo"},
 		{reflect.TypeFor[Org](), "org.json", "#/components/schemas/Organization"},
 		{reflect.TypeFor[Member](), "org.json", "#/components/schemas/Member"},
-		{reflect.TypeFor[OrgSettings](), "org.json", "#/components/schemas/Settings"},
 		{reflect.TypeFor[Invitation](), "org.json", "#/components/schemas/Invitation"},
 		{reflect.TypeFor[InvitationPreview](), "org.json", "#/components/schemas/InvitationPreview"},
 		{reflect.TypeFor[CreateOrgRequest](), "org.json", "#/components/schemas/CreateOrgRequest"},

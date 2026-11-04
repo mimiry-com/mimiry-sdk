@@ -1,4 +1,4 @@
-# The `mimiry rpc` machine interface — protocol 1
+# The `mimiry rpc` machine interface — protocol 2
 
 `mimiry rpc` is how programs that are not written in Go use the library. The Python package is built
 on it and nothing else. It never reads the human CLI's output, so that output can change freely.
@@ -15,7 +15,7 @@ on it and nothing else. It never reads the human CLI's output, so that output ca
 
 | Field | | |
 |---|---|---|
-| `v` | required | Protocol version. This binary speaks `1`. |
+| `v` | required | Protocol version. This binary speaks `2`. |
 | `op` | required | The operation, see below. `describe` lists them. |
 | `params` | | The operation's parameters. **Unknown fields are refused**: a misspelt filter that was silently ignored would match everything. |
 | `host`, `key` | | Override `MIMIRY_HOST` / `MIMIRY_SSH_KEY` and the config `mimiry auth` saved, in that order. |
@@ -101,7 +101,7 @@ ends the operation `failed`. `orgs.wait_operation` follows it to the outcome.
 | `volumes.list` | `org_id`, `state`, `state_not`, `operation`, `operation_not`, `attached`, `updated_after`, `updated_before`, `limit`, `offset`, `all` | A page of volumes. |
 | `volumes.get` | `id` | A volume. |
 | `volumes.delete` | `id` | `{id, status, ...}` |
-| `volumes.extend` | `id`, `new_size_gb` | `{id, status, ...}` |
+| `volumes.extend` | `id`, `size_gb` | `{id, status, ...}` |
 | `volumes.wait_provisioned` | `id`, `interval_seconds`, `not_found_grace_seconds` | The provisioned volume; on failure, kind `failed`. |
 | `gpus.catalog` | | Every GPU model. Needs no key. |
 | `gpus.availability` | `gpu_family`, `form_factor`, `min_vram_gb`, `min_gpu_count`, `location`, `provider`, `min_hourly_rate`, `max_hourly_rate`, `include_unavailable`, `full`, `include_cpu` | GPU models with prices and stock. Needs no key. |
@@ -117,7 +117,7 @@ ends the operation `failed`. `orgs.wait_operation` follows it to the outcome.
 | `orgs.start_wind_down` | `org_id`, `readable_days`, `drain_sessions`, `volume_grace_days`, `reason` | Accepted. Elevated. |
 | `orgs.cancel_wind_down` | `org_id` | Accepted. Elevated. |
 | `orgs.transfer_ownership` | `org_id`, `new_owner_id` | Accepted. Elevated. |
-| `orgs.members` | `org_id` | Every member. |
+| `orgs.members` | `org_id`, `limit`, `offset`, `all` | A page of the members, oldest first. |
 | `orgs.invite` | `org_id`, `email` or `username`, `role` | Accepted. Elevated. |
 | `orgs.set_member_role` | `org_id`, `user_id`, `role` | Accepted. Elevated. |
 | `orgs.remove_member` | `org_id`, `user_id` | Accepted. Elevated. |

@@ -20,12 +20,10 @@ type APIError struct {
 	Method     string
 	Path       string
 
-	// ErrorCode is the response's "error" field. Most endpoints put a
-	// machine-readable code there ("gpu_unavailable"); some put a sentence.
+	// ErrorCode is the response's "error" field: a snake_case code such as
+	// "gpu_unavailable". Branch on it, never on Message.
 	ErrorCode string
-	// Code is the optional "code" field.
-	Code string
-	// Message is the human-readable "message" field, when present.
+	// Message is the response's "message" field: what went wrong, for people.
 	Message string
 	// Fields and Errors carry per-field validation messages, when present;
 	// endpoints use one shape or the other.
@@ -71,7 +69,6 @@ func newAPIError(method, path string, status int, body []byte) *APIError {
 	e := &APIError{StatusCode: status, Method: method, Path: path}
 	var parsed struct {
 		Error             string            `json:"error"`
-		Code              string            `json:"code"`
 		Message           string            `json:"message"`
 		Fields            map[string]string `json:"fields"`
 		Errors            []FieldError      `json:"errors"`
@@ -79,7 +76,6 @@ func newAPIError(method, path string, status int, body []byte) *APIError {
 	}
 	if json.Unmarshal(body, &parsed) == nil && (parsed.Error != "" || parsed.Message != "") {
 		e.ErrorCode = parsed.Error
-		e.Code = parsed.Code
 		e.Message = parsed.Message
 		e.Fields = parsed.Fields
 		e.Errors = parsed.Errors

@@ -188,7 +188,7 @@ func (c *Client) token(ctx context.Context, fresh bool) (*Token, bool, error) {
 }
 
 // exchange signs fingerprint\ntimestamp\nnonce and trades it for a token at
-// POST /api/v1/auth/token.
+// POST /api/auth/v1/token.
 func (c *Client) exchange(ctx context.Context) (*Token, error) {
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
@@ -221,7 +221,7 @@ func (c *Client) exchange(ctx context.Context) (*Token, error) {
 		UserID      string `json:"user_id"`
 		Email       string `json:"email"`
 	}
-	if err := c.send(ctx, http.MethodPost, "/api/v1/auth/token", nil, body, headers, &resp); err != nil {
+	if err := c.send(ctx, http.MethodPost, "/api/auth/v1/token", nil, body, headers, &resp); err != nil {
 		return nil, err
 	}
 	if resp.AccessToken == "" || resp.ExpiresIn <= 0 {

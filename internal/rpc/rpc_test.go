@@ -22,7 +22,7 @@ import (
 func api(t *testing.T, h http.HandlerFunc) ClientFactory {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/token" {
+		if r.URL.Path == "/api/auth/v1/token" {
 			io.WriteString(w, `{"access_token":"tok","expires_in":300,"user_id":"u-1"}`)
 			return
 		}
@@ -71,7 +71,7 @@ func TestDescribeNeedsNoClient(t *testing.T) {
 	code, lines := serve(t, func(string, string) (*mimiry.Client, error) {
 		t.Fatal("describe built a client")
 		return nil, nil
-	}, `{"v":1,"op":"describe"}`)
+	}, `{"v":2,"op":"describe"}`)
 	r := last(lines)
 	if code != 0 || r["ok"] != true {
 		t.Fatalf("code %d, %v", code, r)
@@ -93,7 +93,7 @@ func TestListPassesFiltersThroughAndAnswersAPage(t *testing.T) {
 		}
 		io.WriteString(w, `{"sessions":[{"id":"s-1","state":"running"}],"total_count":9,"limit":5,"offset":0,"unavailable":1}`)
 	})
-	code, lines := serve(t, f, `{"v":1,"op":"sessions.list","params":{"state":["running","idle"],"limit":5}}`)
+	code, lines := serve(t, f, `{"v":2,"op":"sessions.list","params":{"state":["running","idle"],"limit":5}}`)
 	r := last(lines)
 	if code != 0 {
 		t.Fatalf("code %d: %v", code, r)
@@ -114,7 +114,7 @@ func TestAllCollectsEveryPage(t *testing.T) {
 		}
 		io.WriteString(w, `{"transactions":[{"id":"c"}],"total_count":3,"limit":100,"offset":2}`)
 	})
-	code, lines := serve(t, f, `{"v":1,"op":"account.transactions","params":{"all":true}}`)
+	code, lines := serve(t, f, `{"v":2,"op":"account.transactions","params":{"all":true}}`)
 	res := last(lines)["result"].(map[string]any)
 	if code != 0 || len(res["items"].([]any)) != 3 || res["total_count"].(float64) != 3 {
 		t.Fatalf("code %d, result %v", code, res)
@@ -124,7 +124,7 @@ func TestAllCollectsEveryPage(t *testing.T) {
 // A misspelt filter is refused, not ignored: ignored, it matches everything.
 func TestUnknownParamIsAUsageError(t *testing.T) {
 	f := api(t, func(w http.ResponseWriter, r *http.Request) { t.Error("the API was called") })
-	code, lines := serve(t, f, `{"v":1,"op":"sessions.list","params":{"sate":["running"]}}`)
+	code, lines := serve(t, f, `{"v":2,"op":"sessions.list","params":{"sate":["running"]}}`)
 	e := errOf(t, last(lines))
 	if code != 1 || e["kind"] != "usage" || !strings.Contains(e["message"].(string), "sate") {
 		t.Fatalf("code %d, error %v", code, e)
@@ -139,10 +139,10 @@ func TestRequestShapeErrors(t *testing.T) {
 		want string
 	}{
 		{`not json`, 2, "not valid JSON"},
-		{`{"v":1,"op":"x","bogus":1}`, 2, "bogus"},
-		{`{"v":2,"op":"describe"}`, 1, "protocol version 2"},
-		{`{"v":1,"op":"sessions.explode"}`, 1, "unknown op"},
-		{`{"v":1,"op":"sessions.get","params":{}}`, 1, "id is required"},
+		{`{"v":2,"op":"x","bogus":1}`, 2, "bogus"},
+		{`{"v":3,"op":"describe"}`, 1, "protocol version 3"},
+		{`{"v":2,"op":"sessions.explode"}`, 1, "unknown op"},
+		{`{"v":2,"op":"sessions.get","params":{}}`, 1, "id is required"},
 	} {
 		code, lines := serve(t, f, tc.req)
 		e := errOf(t, last(lines))
@@ -157,7 +157,7 @@ func TestAPIErrorKeepsStatusCodeAndDetails(t *testing.T) {
 		w.WriteHeader(402)
 		io.WriteString(w, `{"error":"insufficient_balance","message":"Need 2.50 EUR","required":2.5,"available":0.4}`)
 	})
-	code, lines := serve(t, f, `{"v":1,"op":"sessions.create","params":{"name":"n","image":{"uri":"docker.io/x/y"},"gpu":{"types":["H100"]}}}`)
+	code, lines := serve(t, f, `{"v":2,"op":"sessions.create","params":{"name":"n","image":{"uri":"docker.io/x/y"},"gpu":{"types":["H100"]}}}`)
 	e := errOf(t, last(lines))
 	if code != 1 || e["kind"] != "api" || e["status"].(float64) != 402 || e["code"] != "insufficient_balance" {
 		t.Fatalf("code %d, error %v", code, e)
@@ -169,7 +169,7 @@ func TestAPIErrorKeepsStatusCodeAndDetails(t *testing.T) {
 
 func TestConfigAndNetworkErrorsAreTheirOwnKinds(t *testing.T) {
 	code, lines := serve(t, func(string, string) (*mimiry.Client, error) { return nil, mimiry.ErrNoHost },
-		`{"v":1,"op":"account.balance"}`)
+		`{"v":2,"op":"account.balance"}`)
 	if e := errOf(t, last(lines)); code != 1 || e["kind"] != "config" || e["code"] != "no_host" {
 		t.Fatalf("no host: %v", e)
 	}
@@ -179,7 +179,7 @@ func TestConfigAndNetworkErrorsAreTheirOwnKinds(t *testing.T) {
 	dead := func(string, string) (*mimiry.Client, error) {
 		return mimiry.New(mimiry.Options{Host: "http://127.0.0.1:1", Signer: signer})
 	}
-	code, lines = serve(t, dead, `{"v":1,"op":"account.balance"}`)
+	code, lines = serve(t, dead, `{"v":2,"op":"account.balance"}`)
 	if e := errOf(t, last(lines)); code != 1 || e["kind"] != "network" {
 		t.Fatalf("unreachable: %v", e)
 	}
@@ -196,7 +196,7 @@ func TestWaitProgressAndFailure(t *testing.T) {
 		}
 		io.WriteString(w, `{"id":"s-1","state":"pull_failed","ssh_enabled":true,"error":"image not found"}`)
 	})
-	code, lines := serve(t, f, `{"v":1,"op":"sessions.wait_ready","params":{"id":"s-1","interval_seconds":0.001},"progress":true}`)
+	code, lines := serve(t, f, `{"v":2,"op":"sessions.wait_ready","params":{"id":"s-1","interval_seconds":0.001},"progress":true}`)
 	if code != 1 || len(lines) != 3 {
 		t.Fatalf("code %d, %d lines: %v", code, len(lines), lines)
 	}
@@ -215,7 +215,7 @@ func TestTimeoutIsItsOwnKind(t *testing.T) {
 	f := api(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"id":"v-1","state":"submitted","operation":"provisioning"}`)
 	})
-	code, lines := serve(t, f, `{"v":1,"op":"volumes.wait_provisioned","params":{"id":"v-1","interval_seconds":0.001},"timeout_seconds":0.05}`)
+	code, lines := serve(t, f, `{"v":2,"op":"volumes.wait_provisioned","params":{"id":"v-1","interval_seconds":0.001},"timeout_seconds":0.05}`)
 	if e := errOf(t, last(lines)); code != 1 || e["kind"] != "timeout" {
 		t.Fatalf("code %d, error %v", code, e)
 	}
@@ -223,7 +223,7 @@ func TestTimeoutIsItsOwnKind(t *testing.T) {
 
 func TestTokenAnswer(t *testing.T) {
 	f := api(t, func(w http.ResponseWriter, r *http.Request) {})
-	code, lines := serve(t, f, `{"v":1,"op":"auth.token"}`)
+	code, lines := serve(t, f, `{"v":2,"op":"auth.token"}`)
 	res := last(lines)["result"].(map[string]any)
 	if code != 0 || res["access_token"] != "tok" || res["user_id"] != "u-1" || res["expires_at"] == nil {
 		t.Fatalf("code %d, result %v", code, res)

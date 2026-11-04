@@ -128,7 +128,7 @@ func TestElevatedCommandsAreMarked(t *testing.T) {
 	var reached []apispec.Op
 	var unknown []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/token" {
+		if r.URL.Path == "/api/auth/v1/token" {
 			io.WriteString(w, `{"access_token":"tok","expires_in":300,"user_id":"u-1"}`)
 			return
 		}

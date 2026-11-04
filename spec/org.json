@@ -3,7 +3,7 @@
   "info": {
     "title": "Mimiry Organizations API",
     "version": "1.0.0",
-    "description": "Organization management API for the Mimiry platform. Create and manage\norganizations, invite members, and control access.\n\n## Authentication\n\nAll endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/v1/auth/token`) or portal login.\n\n## Async Operations\n\nMutating operations (create, update, delete, invite, etc.) return\n`202 Accepted` with a `request_id` and a `status_url`. Poll the status\nendpoint, or stream it, to learn the outcome: the `202` means the request\nwas accepted, not that it succeeded. A status is kept for 15 minutes.\n\n```\nPOST /api/organizations/v1 → 202 { request_id, status_url }\nGET  /api/organizations/v1/operations/{request_id} → { status: \"completed\" }\n```\n\n## Roles in an organization\n\n| Role | What it allows |\n|------|----------------|\n| **owner** | Everything below, plus changing members' roles, transferring ownership, winding down and deleting the organization. |\n| **admin** | Changing the organization's name, slug and settings; inviting members; removing members other than the owner; revoking invitations. |\n| **member** | Reading the organization, its members and its pending invitations. Leaving. |\n\nOperations marked **(requires elevated rights)** need one of these rights in\nthe organization. Without it the answer is `403`.\n",
+    "description": "Organization management API for the Mimiry platform. Create and manage\norganizations, invite members, and control access.\n\n## Authentication\n\nAll endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/auth/v1/token`) or portal login.\n\n## Async Operations\n\nMutating operations (create, update, delete, invite, etc.) return\n`202 Accepted` with a `request_id` and a `status_url`. Poll the status\nendpoint, or stream it, to learn the outcome: the `202` means the request\nwas accepted, not that it succeeded. A status is kept for 15 minutes.\n\n```\nPOST /api/organizations/v1 → 202 { request_id, status_url }\nGET  /api/organizations/v1/operations/{request_id} → { status: \"completed\" }\n```\n\n## Roles in an organization\n\n| Role | What it allows |\n|------|----------------|\n| **owner** | Everything below, plus changing members' roles, transferring ownership, winding down and deleting the organization. |\n| **admin** | Changing the organization's name and slug; inviting members; removing members other than the owner; revoking invitations. |\n| **member** | Reading the organization, its members and its pending invitations. Leaving. |\n\nOperations marked **(requires elevated rights)** need one of these rights in\nthe organization. Without it the answer is `403`.\n",
     "contact": {
       "name": "Mimiry Platform",
       "url": "https://mimiry.com"
@@ -79,7 +79,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Your account type does not allow creating organizations"
+                  "error": "forbidden",
+                  "message": "Your account type does not allow creating organizations"
                 }
               }
             }
@@ -205,7 +206,7 @@
       "get": {
         "operationId": "getOrganization",
         "summary": "Get organization by ID",
-        "description": "Returns the organization, its members and settings. Members only.",
+        "description": "Returns the organization and its members. Members only.",
         "tags": [
           "Organizations"
         ],
@@ -235,7 +236,7 @@
         "operationId": "updateOrganization",
         "summary": "Update organization (requires elevated rights)",
         "x-requires-elevated-rights": true,
-        "description": "Changes the organization's name, slug or settings. The owner or an\nadmin may. Only the fields given are changed.\n",
+        "description": "Changes the organization's name or slug. The owner or an admin may.\nOnly the fields given are changed.\n",
         "tags": [
           "Organizations"
         ],
@@ -247,8 +248,7 @@
                 "$ref": "#/components/schemas/UpdateOrgRequest"
               },
               "example": {
-                "name": "Acme Corporation",
-                "allow_member_invites": true
+                "name": "Acme Corporation"
               }
             }
           }
@@ -271,7 +271,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Only owner or admin can update organization"
+                  "error": "forbidden",
+                  "message": "Only owner or admin can update organization"
                 }
               }
             }
@@ -304,7 +305,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Only the owner can delete an organization"
+                  "error": "forbidden",
+                  "message": "Only the owner can delete an organization"
                 }
               }
             }
@@ -357,7 +359,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "readable_days is required (1-90); volume_grace_days must be 0-30"
+                  "error": "invalid_request",
+                  "message": "readable_days is required (1-90); volume_grace_days must be 0-30"
                 }
               }
             }
@@ -436,19 +439,30 @@
       "get": {
         "operationId": "listMembers",
         "summary": "List organization members",
-        "description": "Returns every member of the organization. Members only.",
+        "description": "Lists the organization's members, oldest first (by `joined_at`). Members\nonly.\n",
         "tags": [
           "Members"
         ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The members.",
+            "description": "One page of members.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "required": [
-                    "members"
+                    "members",
+                    "total_count",
+                    "limit",
+                    "offset"
                   ],
                   "properties": {
                     "members": {
@@ -456,6 +470,15 @@
                       "items": {
                         "$ref": "#/components/schemas/Member"
                       }
+                    },
+                    "total_count": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
                     }
                   }
                 }
@@ -470,83 +493,6 @@
           },
           "404": {
             "$ref": "#/components/responses/OrgNotFound"
-          }
-        }
-      }
-    },
-    "/api/organizations/v1/{id}/members/invite": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/OrgId"
-        }
-      ],
-      "post": {
-        "operationId": "inviteMember",
-        "summary": "Invite a member (requires elevated rights)",
-        "x-requires-elevated-rights": true,
-        "description": "Invites someone by email address or by username: exactly one of the\ntwo. The owner or an admin may.\n\nThe role is `admin` or `member`. An invitation can be accepted for\n7 days.\n",
-        "tags": [
-          "Invitations"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InviteMemberRequest"
-              },
-              "example": {
-                "email": "jane@example.com",
-                "role": "member"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "$ref": "#/components/responses/Accepted"
-          },
-          "400": {
-            "description": "Neither or both of `email` and `username`, or an unknown role.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "error": "Exactly one of 'email' or 'username' is required"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "description": "The caller is not the owner or an admin.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "error": "You don't have permission to invite members"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such organization, or no user with that username.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "error": "No user with that username"
-                }
-              }
-            }
           }
         }
       }
@@ -593,7 +539,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Cannot change the owner's role"
+                  "error": "invalid_request",
+                  "message": "Cannot change the owner's role"
                 }
               }
             }
@@ -609,7 +556,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Only organization owner can change member roles"
+                  "error": "forbidden",
+                  "message": "Only organization owner can change member roles"
                 }
               }
             }
@@ -622,7 +570,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Member not found in organization"
+                  "error": "not_found",
+                  "message": "Member not found in organization"
                 }
               }
             }
@@ -659,7 +608,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Cannot remove organization owner"
+                  "error": "owner_not_removable",
+                  "message": "Cannot remove organization owner"
                 }
               }
             }
@@ -675,7 +625,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "You don't have permission to remove this member"
+                  "error": "forbidden",
+                  "message": "You don't have permission to remove this member"
                 }
               }
             }
@@ -725,7 +676,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "new_owner_id is required and must be a UUID"
+                  "error": "invalid_request",
+                  "message": "new_owner_id is required and must be a UUID"
                 }
               }
             }
@@ -808,8 +760,81 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Could not read invitations; this is not a statement that there are none. Retry.",
-                  "code": "INVITATIONS_UNAVAILABLE"
+                  "error": "invitations_unavailable",
+                  "message": "Could not read invitations; this is not a statement that there are none. Retry."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "inviteMember",
+        "summary": "Invite a member (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Invites someone by email address or by username: exactly one of the\ntwo. The owner or an admin may.\n\nThe role is `admin` or `member`. An invitation can be accepted for\n7 days.\n",
+        "tags": [
+          "Invitations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteMemberRequest"
+              },
+              "example": {
+                "email": "jane@example.com",
+                "role": "member"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "description": "Neither or both of `email` and `username`, or an unknown role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "message": "Exactly one of 'email' or 'username' is required"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller is not the owner or an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "forbidden",
+                  "message": "You don't have permission to invite members"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such organization, or no user with that username.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "not_found",
+                  "message": "No user with that username"
                 }
               }
             }
@@ -855,7 +880,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Only the organization owner or an admin can revoke an invitation"
+                  "error": "forbidden",
+                  "message": "Only the organization owner or an admin can revoke an invitation"
                 }
               }
             }
@@ -909,8 +935,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Invitation not found or no longer valid",
-                  "code": "NOT_FOUND"
+                  "error": "not_found",
+                  "message": "Invitation not found or no longer valid"
                 }
               }
             }
@@ -923,8 +949,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Could not verify this invitation right now",
-                  "code": "PRECHECK_UNAVAILABLE"
+                  "error": "precheck_unavailable",
+                  "message": "Could not verify this invitation right now"
                 }
               }
             }
@@ -1000,7 +1026,8 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "Operation not found or expired"
+                  "error": "not_found",
+                  "message": "Operation not found or expired"
                 }
               }
             }
@@ -1045,7 +1072,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT token obtained via SSH signature exchange (`POST /api/v1/auth/token`)\nor portal login (`POST /api/auth/v1/login`).\n\nInclude in the `Authorization` header:\n```\nAuthorization: Bearer <token>\n```\n"
+        "description": "JWT token obtained via SSH signature exchange (`POST /api/auth/v1/token`)\nor portal login (`POST /api/auth/v1/login`).\n\nInclude in the `Authorization` header:\n```\nAuthorization: Bearer <token>\n```\n"
       }
     },
     "parameters": {
@@ -1131,7 +1158,8 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "example": {
-              "error": "Access denied"
+              "error": "forbidden",
+              "message": "Access denied"
             }
           }
         }
@@ -1144,7 +1172,8 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "example": {
-              "error": "Organization not found"
+              "error": "not_found",
+              "message": "Organization not found"
             }
           }
         }
@@ -1157,7 +1186,8 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "example": {
-              "error": "The request could not be completed right now. Retry."
+              "error": "unavailable",
+              "message": "The request could not be completed right now. Retry."
             }
           }
         }
@@ -1168,6 +1198,10 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "invalid_request",
+              "message": "Invalid request body"
             }
           }
         }
@@ -1180,7 +1214,8 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "example": {
-              "error": "Unauthorized"
+              "error": "unauthorized",
+              "message": "Authentication required"
             }
           }
         }
@@ -1193,7 +1228,8 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "example": {
-              "error": "Internal server error"
+              "error": "internal_error",
+              "message": "Internal server error"
             }
           }
         }
@@ -1232,9 +1268,6 @@
           },
           "member_count": {
             "type": "integer"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/Settings"
           },
           "is_active": {
             "type": "boolean"
@@ -1275,21 +1308,6 @@
           "invited_by": {
             "type": "string",
             "format": "uuid"
-          }
-        }
-      },
-      "Settings": {
-        "type": "object",
-        "properties": {
-          "allow_member_invites": {
-            "type": "boolean",
-            "description": "NOT IN EFFECT. Stored and returned, but only the owner and admins can invite, whatever its value.\n",
-            "deprecated": true
-          },
-          "require_2fa": {
-            "type": "boolean",
-            "description": "NOT YET ENFORCED. The value is stored and returned, but no login or org-access path reads it — members without 2FA are not blocked. Do not rely on this as a security control.\n",
-            "deprecated": true
           }
         }
       },
@@ -1418,16 +1436,6 @@
             "type": "string",
             "description": "A new slug, by the same rules as at creation.",
             "example": "o-acme-corporation"
-          },
-          "allow_member_invites": {
-            "type": "boolean",
-            "description": "NOT IN EFFECT. Accepted and stored, but only the owner and admins can invite, whatever its value.\n",
-            "deprecated": true
-          },
-          "require_2fa": {
-            "type": "boolean",
-            "description": "NOT YET ENFORCED. Accepted and stored, but no login or org-access path reads it. Setting it true does not protect the org.\n",
-            "deprecated": true
           }
         }
       },
@@ -1512,27 +1520,25 @@
       },
       "ErrorResponse": {
         "type": "object",
+        "description": "Every error from the public API has this shape. Branch on `error`, never on\n`message`: the code is part of the API, while the sentence may be reworded.\nSome errors carry more fields beside these two; each operation documents\nits own.\n",
         "required": [
-          "error"
+          "error",
+          "message"
         ],
         "properties": {
           "error": {
             "type": "string",
-            "description": "Error message describing what went wrong."
-          },
-          "code": {
-            "type": "string",
-            "description": "Machine-readable error code for programmatic handling."
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Machine-readable error code, in snake_case."
           },
           "message": {
             "type": "string",
-            "description": "Human-readable error message with additional detail."
+            "description": "What went wrong, in a sentence a person can read."
           }
         },
         "example": {
           "error": "invalid_request",
-          "code": "VALIDATION_ERROR",
-          "message": "Email field is required"
+          "message": "Organization name is required"
         }
       },
       "AsyncResponse": {

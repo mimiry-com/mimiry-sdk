@@ -343,13 +343,13 @@ type Transaction struct {
 
 // Quota is the caller's usage limits. A limit of 0 or less means unlimited.
 type Quota struct {
-	MaxConcurrentJobs  int        `json:"max_concurrent_jobs"`
-	CurrentJobs        int        `json:"current_jobs"`
-	MaxGPUHoursDaily   float64    `json:"max_gpu_hours_daily"`
-	GPUHoursUsedToday  float64    `json:"gpu_hours_used_today"`
-	MaxGPUHoursMonthly float64    `json:"max_gpu_hours_monthly"`
-	GPUHoursUsedMonth  float64    `json:"gpu_hours_used_month"`
-	ResetsAt           *time.Time `json:"resets_at,omitempty"`
-	LastDailyReset     time.Time  `json:"last_daily_reset"`
-	LastMonthlyReset   time.Time  `json:"last_monthly_reset"`
+	MaxConcurrentSessions int        `json:"max_concurrent_sessions"`
+	CurrentSessions       int        `json:"current_sessions"`
+	MaxGPUHoursDaily      float64    `json:"max_gpu_hours_daily"`
+	GPUHoursUsedToday     float64    `json:"gpu_hours_used_today"`
+	MaxGPUHoursMonthly    float64    `json:"max_gpu_hours_monthly"`
+	GPUHoursUsedMonth     float64    `json:"gpu_hours_used_month"`
+	ResetsAt              *time.Time `json:"resets_at,omitempty"`
+	LastDailyReset        time.Time  `json:"last_daily_reset"`
+	LastMonthlyReset      time.Time  `json:"last_monthly_reset"`
 }

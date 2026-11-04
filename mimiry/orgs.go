@@ -129,21 +129,35 @@ func (s *OrgsService) TransferOwnership(ctx context.Context, orgID, newOwnerID s
 	return s.send(ctx, http.MethodPost, orgPath(orgID)+"/transfer-ownership", body)
 }
 
-// Members returns every member of an organisation. Members only.
-func (s *OrgsService) Members(ctx context.Context, orgID string) ([]Member, error) {
+// Members returns one page of an organisation's members, oldest first.
+// Members only.
+func (s *OrgsService) Members(ctx context.Context, orgID string, o ListOptions) (*Page[Member], error) {
+	q := url.Values{}
+	o.encode(q)
 	var out struct {
-		Members []Member `json:"members"`
+		Members    []Member `json:"members"`
+		TotalCount int      `json:"total_count"`
+		Limit      int      `json:"limit"`
+		Offset     int      `json:"offset"`
 	}
-	if err := s.c.Do(ctx, http.MethodGet, orgPath(orgID)+"/members", nil, nil, &out); err != nil {
+	if err := s.c.Do(ctx, http.MethodGet, orgPath(orgID)+"/members", q, nil, &out); err != nil {
 		return nil, err
 	}
-	return nonNil(out.Members), nil
+	return &Page[Member]{Items: nonNil(out.Members), TotalCount: out.TotalCount,
+		Limit: out.Limit, Offset: out.Offset}, nil
+}
+
+// AllMembers iterates every member of an organisation.
+func (s *OrgsService) AllMembers(ctx context.Context, orgID string) iter.Seq2[Member, error] {
+	return all(ctx, func(ctx context.Context, p ListOptions) (*Page[Member], error) {
+		return s.Members(ctx, orgID, p)
+	})
 }
 
 // Invite invites someone to an organisation by email address or username.
 // The owner or an admin may. (requires elevated rights)
 func (s *OrgsService) Invite(ctx context.Context, orgID string, req InviteRequest) (*OperationAccepted, error) {
-	return s.send(ctx, http.MethodPost, orgPath(orgID)+"/members/invite", req)
+	return s.send(ctx, http.MethodPost, orgPath(orgID)+"/invitations", req)
 }
 
 // SetMemberRole changes a member's role to admin or member. Only the owner

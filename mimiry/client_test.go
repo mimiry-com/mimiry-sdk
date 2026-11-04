@@ -65,7 +65,7 @@ func (f *fakeAPI) revokeAll() {
 }
 
 func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/v1/auth/token" {
+	if r.URL.Path == "/api/auth/v1/token" {
 		f.exchange(w, r)
 		return
 	}
@@ -384,7 +384,7 @@ func TestPublicEndpointsNeedNoKey(t *testing.T) {
 	var auth atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth.Store(r.Header.Get("Authorization"))
-		if r.URL.Path == "/api/v1/auth/token" {
+		if r.URL.Path == "/api/auth/v1/token" {
 			t.Error("signed in for a public endpoint")
 		}
 		io.WriteString(w, `{"gpu_models":[]}`)

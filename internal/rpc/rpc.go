@@ -23,7 +23,7 @@ import (
 
 // Protocol is the version of the request and response shapes. It changes only
 // on an incompatible change; adding an operation or a field does not change it.
-const Protocol = 1
+const Protocol = 2
 
 // Request is one call.
 type Request struct {

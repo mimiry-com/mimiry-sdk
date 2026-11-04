@@ -218,7 +218,7 @@ func TestMutationsUseTheRightMethodAndBody(t *testing.T) {
 	want := []seen{
 		{"POST", "/api/compute/v1/sessions", `{"name":"n","image":{"uri":"docker.io/x/y"},"gpu":{"types":["H100"]},"command":"nvidia-smi"}`},
 		{"DELETE", "/api/compute/v1/sessions/s 1", ""},
-		{"PUT", "/api/compute/v1/volumes/v-1", `{"new_size_gb":200}`},
+		{"PATCH", "/api/compute/v1/volumes/v-1", `{"size_gb":200}`},
 		{"DELETE", "/api/compute/v1/volumes/v-1", ""},
 	}
 	if len(calls) != len(want) {

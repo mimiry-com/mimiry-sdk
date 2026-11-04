@@ -3,6 +3,25 @@
 Each release of the Go library and the `mimiry` command. Versions follow semver; before v1.0.0, a
 minor release may change the Go functions, and says so here.
 
+## Unreleased
+
+For platform API 1.0. Talks to platforms from `0.4.0-live.1` on.
+
+**Breaking:**
+- **Sign-in** uses `POST /api/auth/v1/token`.
+- **`APIError.Code` is gone.** Every error is `{error, message}`: `ErrorCode` is a snake_case code
+  to branch on, and `Message` is for people.
+- **`Orgs().Members`** returns a page and takes `ListOptions`; `AllMembers` iterates every member.
+- **`Quota`** has `MaxConcurrentSessions` and `CurrentSessions` (were `MaxConcurrentJobs` and
+  `CurrentJobs`).
+- **`Volumes().Extend`** sends `PATCH` with `size_gb`.
+- **`Org.Settings` and `OrgSettings` are gone.** Neither setting did anything.
+- **`mimiry rpc` speaks protocol 2:** `volumes.extend` takes `size_gb`, and `orgs.members` returns a
+  page and takes `limit`, `offset` and `all`.
+
+**Changed:** inviting posts to `/invitations`. Money in responses arrives rounded: amounts to the
+cent, rates to 6 decimals.
+
 ## v0.1.0
 
 The first public release.

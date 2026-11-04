@@ -186,7 +186,7 @@ func memberID(e *env, c *mimiry.Client, org, idOrEmail string) (string, error) {
 	if !strings.Contains(idOrEmail, "@") {
 		return idOrEmail, nil
 	}
-	members, err := c.Orgs().Members(e.ctx, org)
+	members, err := allMembers(e, c, org)
 	if err != nil {
 		return "", err
 	}
@@ -275,7 +275,7 @@ func runOrgMembers(e *env, _ *flag.FlagSet, args []string) error {
 	if err != nil {
 		return err
 	}
-	members, err := c.Orgs().Members(e.ctx, org)
+	members, err := allMembers(e, c, org)
 	if err != nil {
 		return err
 	}
@@ -284,6 +284,18 @@ func runOrgMembers(e *env, _ *flag.FlagSet, args []string) error {
 	}
 	printMembers(e.stdout, members)
 	return nil
+}
+
+// allMembers reads every page of an organisation's members.
+func allMembers(e *env, c *mimiry.Client, org string) ([]mimiry.Member, error) {
+	members := []mimiry.Member{}
+	for m, err := range c.Orgs().AllMembers(e.ctx, org) {
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, m)
+	}
+	return members, nil
 }
 
 func printMembers(out io.Writer, members []mimiry.Member) {

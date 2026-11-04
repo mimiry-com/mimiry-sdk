@@ -71,7 +71,7 @@ var markerCalls = map[string]func(context.Context, *Client){
 	},
 	"OrgsService.CancelWindDown":    func(ctx context.Context, c *Client) { c.Orgs().CancelWindDown(ctx, testOrgID) },
 	"OrgsService.TransferOwnership": func(ctx context.Context, c *Client) { c.Orgs().TransferOwnership(ctx, testOrgID, "u-2") },
-	"OrgsService.Members":           func(ctx context.Context, c *Client) { c.Orgs().Members(ctx, testOrgID) },
+	"OrgsService.Members":           func(ctx context.Context, c *Client) { c.Orgs().Members(ctx, testOrgID, ListOptions{}) },
 	"OrgsService.Invite":            func(ctx context.Context, c *Client) { c.Orgs().Invite(ctx, testOrgID, InviteRequest{}) },
 	"OrgsService.SetMemberRole": func(ctx context.Context, c *Client) {
 		c.Orgs().SetMemberRole(ctx, testOrgID, "u-2", OrgRoleAdmin)
@@ -80,6 +80,7 @@ var markerCalls = map[string]func(context.Context, *Client){
 	"OrgsService.Leave":            func(ctx context.Context, c *Client) { c.Orgs().Leave(ctx, testOrgID) },
 	"OrgsService.Invitations":      func(ctx context.Context, c *Client) { c.Orgs().Invitations(ctx, testOrgID, ListOptions{}) },
 	"OrgsService.AllInvitations":   func(ctx context.Context, c *Client) { drain(c.Orgs().AllInvitations(ctx, testOrgID)) },
+	"OrgsService.AllMembers":       func(ctx context.Context, c *Client) { drain(c.Orgs().AllMembers(ctx, testOrgID)) },
 	"OrgsService.RevokeInvitation": func(ctx context.Context, c *Client) { c.Orgs().RevokeInvitation(ctx, testOrgID, "i-1") },
 	"OrgsService.Invitation":       func(ctx context.Context, c *Client) { c.Orgs().Invitation(ctx, "tok-1") },
 	"OrgsService.AcceptInvitation": func(ctx context.Context, c *Client) { c.Orgs().AcceptInvitation(ctx, "tok-1") },
@@ -111,7 +112,7 @@ func recordingClient(t *testing.T) (*Client, func() []recorded) {
 	var mu sync.Mutex
 	var reqs []recorded
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/token" {
+		if r.URL.Path == "/api/auth/v1/token" {
 			json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 300, "user_id": "u-1"})
 			return
 		}

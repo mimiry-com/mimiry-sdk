@@ -43,7 +43,7 @@ var opParams = map[string]string{
 	"volumes.list":             `{}`,
 	"volumes.get":              `{"id":"v-1"}`,
 	"volumes.delete":           `{"id":"v-1"}`,
-	"volumes.extend":           `{"id":"v-1","new_size_gb":200}`,
+	"volumes.extend":           `{"id":"v-1","size_gb":200}`,
 	"volumes.wait_provisioned": `{"id":"v-1"}`,
 
 	"gpus.catalog":      `{}`,
@@ -92,7 +92,7 @@ func TestDescribeListsExactlyTheElevatedOps(t *testing.T) {
 	// sees it, and the public ops (the GPU catalogue and availability) send
 	// none. Every request is recorded here.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/token" {
+		if r.URL.Path == "/api/auth/v1/token" {
 			io.WriteString(w, `{"access_token":"tok","expires_in":300,"user_id":"u-1"}`)
 			return
 		}
@@ -130,7 +130,7 @@ func TestDescribeListsExactlyTheElevatedOps(t *testing.T) {
 		mu.Unlock()
 		// The waits poll a stand-in that never finishes; the first poll is
 		// what counts, and the timeout ends them.
-		serve(t, factory, `{"v":1,"op":"`+name+`","params":`+params+`,"timeout_seconds":0.3}`)
+		serve(t, factory, `{"v":2,"op":"`+name+`","params":`+params+`,"timeout_seconds":0.3}`)
 
 		mu.Lock()
 		for _, u := range unknown {
@@ -169,7 +169,7 @@ func TestDescribeListsExactlyTheElevatedOps(t *testing.T) {
 	}
 
 	// And describe says what elevatedOps says.
-	_, lines := serve(t, nil, `{"v":1,"op":"describe"}`)
+	_, lines := serve(t, nil, `{"v":2,"op":"describe"}`)
 	var d struct {
 		Elevated []string `json:"elevated"`
 	}

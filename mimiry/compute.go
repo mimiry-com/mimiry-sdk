@@ -265,11 +265,11 @@ func (v *VolumesService) Delete(ctx context.Context, id string) (*Accepted, erro
 	return &out, nil
 }
 
-// Extend grows a volume to newSizeGB. Shrinking is not supported.
-func (v *VolumesService) Extend(ctx context.Context, id string, newSizeGB int) (*Accepted, error) {
+// Extend grows a volume to sizeGB. Shrinking is not supported.
+func (v *VolumesService) Extend(ctx context.Context, id string, sizeGB int) (*Accepted, error) {
 	var out Accepted
-	body := map[string]int{"new_size_gb": newSizeGB}
-	if err := v.c.Do(ctx, http.MethodPut, computeAPI+"/volumes/"+url.PathEscape(id), nil, body, &out); err != nil {
+	body := map[string]int{"size_gb": sizeGB}
+	if err := v.c.Do(ctx, http.MethodPatch, computeAPI+"/volumes/"+url.PathEscape(id), nil, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

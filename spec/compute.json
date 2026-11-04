@@ -3,7 +3,7 @@
   "info": {
     "title": "Mimiry Compute API",
     "version": "1.0.0",
-    "description": "GPU compute session management and billing API for the Mimiry platform.\nLaunch GPU-powered compute sessions, manage SSH access, and track billing.\n\n## Authentication\n\nMost endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/v1/auth/token`) or portal login. The **GPU Availability** and\n**GPU Catalog** endpoints are public and require no authentication.\n\n## Sessions\n\nSessions have two dimensions:\n\n- **`state`** (where the session is): `submitted` → `provisioned` →\n  `booting` → `setting_up` → `pulling_image` → `running`. A session whose\n  container has exited is `exited` (the outcome is in `exit_code`); one\n  whose workload is over while its machine is kept is `idle`. Ending\n  passes through `terminating` to `terminated`. A step that fails stops\n  in `provision_failed`, `boot_failed`, `setup_failed`, `pull_failed` or\n  `start_failed`. Every state except `terminated` and `provision_failed`\n  has a machine behind it and is billed. Only a live session can be\n  terminated: `submitted`, `provisioned`, `booting`, `boot_failed`,\n  `setting_up`, `setup_failed`, `pulling_image`, `pull_failed`,\n  `start_failed`, `running` and `idle`. Terminating any other answers\n  `400 invalid_state`.\n- **`operation`** (what is happening now): `provisioning`,\n  `starting__setting_up`, `starting__pulling_image`,\n  `starting__starting_container`, `stopping__stopping_container`,\n  `terminating`. Absent when nothing is in progress.\n\nSSH access is enabled by default. While a session is `running`, its SSH\nconnection details are included in the response.\n\n## Billing\n\nSessions are billed per-GPU-hour from the authenticated user's credit\nbalance. All prices are in **EUR**. Check your balance before launching\nsessions. Credits are added to your account by Mimiry.\n\n## Async Operations\n\nCreating or terminating a session, and creating, extending or deleting a\nvolume, return `202 Accepted` with an absolute `status_url`. Poll it for\nthe outcome.\n\n## Errors\n\nAn error body is `{\"error\": \"<code>\", \"message\": \"<text>\"}`. The code is\nlower-case and stable (`unauthorized`, `not_found`, `validation_failed`,\n…); the message is for people and may change. Some errors add fields:\n`validation_failed` lists `errors[]` of `{field, message}`, and\n`insufficient_balance` and `quota_exceeded` carry their figures.\n\nA `404` with a JSON body means the resource was not found. A path or method\nthat does not exist answers `404` with the plain-text body\n`404 page not found` once you are signed in, and `401` before.\n",
+    "description": "GPU compute session management and billing API for the Mimiry platform.\nLaunch GPU-powered compute sessions, manage SSH access, and track billing.\n\n## Authentication\n\nMost endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/auth/v1/token`) or portal login. The **GPU Availability** and\n**GPU Catalog** endpoints are public and require no authentication.\n\n## Sessions\n\nSessions have two dimensions:\n\n- **`state`** (where the session is): `submitted` → `provisioned` →\n  `booting` → `setting_up` → `pulling_image` → `running`. A session whose\n  container has exited is `exited` (the outcome is in `exit_code`); one\n  whose workload is over while its machine is kept is `idle`. Ending\n  passes through `terminating` to `terminated`. A step that fails stops\n  in `provision_failed`, `boot_failed`, `setup_failed`, `pull_failed` or\n  `start_failed`. Every state except `terminated` and `provision_failed`\n  has a machine behind it and is billed. Only a live session can be\n  terminated: `submitted`, `provisioned`, `booting`, `boot_failed`,\n  `setting_up`, `setup_failed`, `pulling_image`, `pull_failed`,\n  `start_failed`, `running` and `idle`. Terminating any other answers\n  `400 invalid_state`.\n- **`operation`** (what is happening now): `provisioning`,\n  `starting__setting_up`, `starting__pulling_image`,\n  `starting__starting_container`, `stopping__stopping_container`,\n  `terminating`. Absent when nothing is in progress.\n\nSSH access is enabled by default. While a session is `running`, its SSH\nconnection details are included in the response.\n\n## Billing\n\nSessions are billed per-GPU-hour from the authenticated user's credit\nbalance. All prices are in **EUR**. Check your balance before launching\nsessions. Credits are added to your account by Mimiry.\n\nMoney is sent as JSON numbers, rounded where it leaves the platform:\namounts (balances, transactions, required funds) to the cent, and rates\n(`hourly_rate`, `from_hourly_rate`, `rate_per_gb_hour`) to 6 decimal\nplaces. Do arithmetic on them in decimal, not binary floating point.\n\n## Async Operations\n\nCreating or terminating a session, and creating, extending or deleting a\nvolume, return `202 Accepted` with an absolute `status_url`. Poll it for\nthe outcome.\n\n## Errors\n\nAn error body is `{\"error\": \"<code>\", \"message\": \"<text>\"}`. The code is\nlower-case and stable (`unauthorized`, `not_found`, `validation_failed`,\n…); the message is for people and may change. Some errors add fields:\n`validation_failed` lists `errors[]` of `{field, message}`, and\n`insufficient_balance` and `quota_exceeded` carry their figures.\n\nA `404` with a JSON body means the resource was not found. A path or method\nthat does not exist answers `404` with the plain-text body\n`404 page not found` once you are signed in, and `401` before.\n",
     "contact": {
       "name": "Mimiry Platform",
       "url": "https://mimiry.com"
@@ -517,7 +517,7 @@
             }
           },
           "429": {
-            "description": "A quota is reached. `limit` names it: `max_concurrent_jobs`,\n`max_gpu_hours_daily` or `max_gpu_hours_monthly`. `resets_at` is\n`null` for the concurrent limit.\n",
+            "description": "A quota is reached. `limit` names it: `max_concurrent_sessions`,\n`max_gpu_hours_daily` or `max_gpu_hours_monthly`. `resets_at` is\n`null` for the concurrent limit.\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -959,8 +959,8 @@
                   "$ref": "#/components/schemas/QuotaInfo"
                 },
                 "example": {
-                  "max_concurrent_jobs": 3,
-                  "current_jobs": 1,
+                  "max_concurrent_sessions": 3,
+                  "current_sessions": 1,
                   "max_gpu_hours_daily": 24,
                   "gpu_hours_used_today": 2.5,
                   "max_gpu_hours_monthly": 500,
@@ -1020,7 +1020,7 @@
         }
       }
     },
-    "/api/compute/v1/balance/org/{id_or_name}": {
+    "/api/compute/v1/balance/org/{id_or_slug}": {
       "get": {
         "operationId": "getOrgBalance",
         "summary": "Get an organization's balance (requires elevated rights)",
@@ -1031,7 +1031,7 @@
         ],
         "parameters": [
           {
-            "name": "id_or_name",
+            "name": "id_or_slug",
             "in": "path",
             "required": true,
             "schema": {
@@ -1483,10 +1483,10 @@
           }
         }
       },
-      "put": {
+      "patch": {
         "operationId": "extendVolume",
         "summary": "Extend (resize) a volume",
-        "description": "Increases the size of a volume. Shrinking is not supported.\nExtension is asynchronous: the volume's `operation` is `resizing` while\nit runs, and its state stays `provisioned` throughout.\n",
+        "description": "Increases the size of a volume to `size_gb`. Shrinking is not supported.\nExtension is asynchronous: the volume's `operation` is `resizing` while\nit runs, and its state stays `provisioned` throughout.\n",
         "tags": [
           "Volumes"
         ],
@@ -1561,7 +1561,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT token obtained via SSH signature exchange (`POST /api/v1/auth/token`)\nor portal login (`POST /api/auth/v1/login`).\n\nInclude in the `Authorization` header:\n```\nAuthorization: Bearer <token>\n```\n"
+        "description": "JWT token obtained via SSH signature exchange (`POST /api/auth/v1/token`)\nor portal login (`POST /api/auth/v1/login`).\n\nInclude in the `Authorization` header:\n```\nAuthorization: Bearer <token>\n```\n"
       }
     },
     "parameters": {
@@ -2226,7 +2226,7 @@
           "ssh_key_id": {
             "type": "string",
             "format": "uuid",
-            "description": "ID of a registered SSH key to use."
+            "description": "ID of an SSH key registered to your account. Keys are registered in\nthe portal; give `ssh_public_key` instead to use a key that is not.\n"
           },
           "ssh_public_key": {
             "type": "string",
@@ -2567,11 +2567,13 @@
       "QuotaInfo": {
         "type": "object",
         "properties": {
-          "max_concurrent_jobs": {
-            "type": "integer"
+          "max_concurrent_sessions": {
+            "type": "integer",
+            "description": "The most sessions that may be live at once."
           },
-          "current_jobs": {
-            "type": "integer"
+          "current_sessions": {
+            "type": "integer",
+            "description": "Sessions live now."
           },
           "max_gpu_hours_daily": {
             "type": "number"
@@ -2809,7 +2811,7 @@
           "limit": {
             "type": "string",
             "enum": [
-              "max_concurrent_jobs",
+              "max_concurrent_sessions",
               "max_gpu_hours_daily",
               "max_gpu_hours_monthly"
             ]
@@ -2925,10 +2927,10 @@
       "ExtendVolumeRequest": {
         "type": "object",
         "required": [
-          "new_size_gb"
+          "size_gb"
         ],
         "properties": {
-          "new_size_gb": {
+          "size_gb": {
             "type": "integer",
             "minimum": 100,
             "maximum": 10000,
@@ -3055,27 +3057,25 @@
       },
       "ErrorResponse": {
         "type": "object",
+        "description": "Every error from the public API has this shape. Branch on `error`, never on\n`message`: the code is part of the API, while the sentence may be reworded.\nSome errors carry more fields beside these two; each operation documents\nits own.\n",
         "required": [
-          "error"
+          "error",
+          "message"
         ],
         "properties": {
           "error": {
             "type": "string",
-            "description": "Error message describing what went wrong."
-          },
-          "code": {
-            "type": "string",
-            "description": "Machine-readable error code for programmatic handling."
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Machine-readable error code, in snake_case."
           },
           "message": {
             "type": "string",
-            "description": "Human-readable error message with additional detail."
+            "description": "What went wrong, in a sentence a person can read."
           }
         },
         "example": {
           "error": "invalid_request",
-          "code": "VALIDATION_ERROR",
-          "message": "Email field is required"
+          "message": "Organization name is required"
         }
       }
     }

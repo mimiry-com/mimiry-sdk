@@ -110,16 +110,16 @@ var ops = map[string]func(*call) (any, error){
 	},
 	"volumes.extend": func(cl *call) (any, error) {
 		var p struct {
-			ID        string `json:"id"`
-			NewSizeGB int    `json:"new_size_gb"`
+			ID     string `json:"id"`
+			SizeGB int    `json:"size_gb"`
 		}
 		if err := cl.decodeID(&p, &p.ID); err != nil {
 			return nil, err
 		}
-		if p.NewSizeGB <= 0 {
-			return nil, &usageError{"params: new_size_gb is required"}
+		if p.SizeGB <= 0 {
+			return nil, &usageError{"params: size_gb is required"}
 		}
-		return cl.c.Volumes().Extend(cl.ctx, p.ID, p.NewSizeGB)
+		return cl.c.Volumes().Extend(cl.ctx, p.ID, p.SizeGB)
 	},
 	"volumes.wait_provisioned": func(cl *call) (any, error) {
 		var p waitParams
@@ -199,7 +199,6 @@ var ops = map[string]func(*call) (any, error){
 	},
 	"orgs.delete":           orgOp(func(cl *call, org string) (any, error) { return cl.c.Orgs().Delete(cl.ctx, org) }),
 	"orgs.cancel_wind_down": orgOp(func(cl *call, org string) (any, error) { return cl.c.Orgs().CancelWindDown(cl.ctx, org) }),
-	"orgs.members":          orgOp(func(cl *call, org string) (any, error) { return cl.c.Orgs().Members(cl.ctx, org) }),
 	"orgs.leave":            orgOp(func(cl *call, org string) (any, error) { return cl.c.Orgs().Leave(cl.ctx, org) }),
 	"orgs.start_wind_down": func(cl *call) (any, error) {
 		var p struct {
@@ -260,6 +259,20 @@ var ops = map[string]func(*call) (any, error){
 			return nil, &usageError{"params: user_id is required"}
 		}
 		return cl.c.Orgs().RemoveMember(cl.ctx, p.OrgID, p.UserID)
+	},
+	"orgs.members": func(cl *call) (any, error) {
+		var p struct {
+			OrgID string `json:"org_id"`
+			mimiry.ListOptions
+			All bool `json:"all,omitzero"`
+		}
+		if err := cl.decodeID(&p, &p.OrgID); err != nil {
+			return nil, err
+		}
+		if p.All {
+			return collect(cl.c.Orgs().AllMembers(cl.ctx, p.OrgID))
+		}
+		return page(cl.c.Orgs().Members(cl.ctx, p.OrgID, p.ListOptions))
 	},
 	"orgs.invitations": func(cl *call) (any, error) {
 		var p struct {
