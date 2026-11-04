@@ -17,11 +17,14 @@ Or download a binary for Linux or macOS (amd64 or arm64) from the
 [releases](https://github.com/mimiry-com/mimiry-sdk/releases). Each release lists the SHA-256 of
 every file in `SHA256SUMS`. Windows is not supported yet.
 
-The library:
+The library, in your module:
 
 ```
-go get github.com/mimiry-com/mimiry-sdk@latest
+go get github.com/mimiry-com/mimiry-sdk/mimiry@latest
 ```
+
+and `import "github.com/mimiry-com/mimiry-sdk/mimiry"`. Name the package, as here: the module's
+root holds no package, so `go get` on the root adds the module without its dependencies.
 
 `mimiry --version` says which one you have.
 
