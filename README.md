@@ -7,7 +7,14 @@ The client library for the Mimiry API, and the `mimiry` command built on it.
 
 ## Install
 
-The command, with Go 1.26 or later:
+The command, with Homebrew (macOS or Linux):
+
+```
+brew trust mimiry-com/tap          # once: Homebrew asks you to trust a tap before using it
+brew install mimiry-com/tap/mimiry
+```
+
+Or with Go 1.26 or later:
 
 ```
 go install github.com/mimiry-com/mimiry-sdk/cmd/mimiry@latest
