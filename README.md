@@ -123,4 +123,4 @@ be in the document's enum. A difference is allowed only with a written reason.
 
 ## Licence
 
-Apache-2.0, see `LICENSE`.
+Copyright 2026 Mimiry. Apache-2.0: see `LICENSE` and `NOTICE`.

@@ -7,7 +7,7 @@
 #   scripts/release.sh v0.1.0             the same, then create the GitHub release
 #
 # What it builds, in dist/:
-#   mimiry_<version>_<os>_<arch>.tar.gz   the binary, LICENSE and README.md
+#   mimiry_<version>_<os>_<arch>.tar.gz   the binary, LICENSE, NOTICE and README.md
 #   SHA256SUMS                            one line per archive
 #
 # Each binary is stamped with the version at link time, so `mimiry --version`
@@ -65,9 +65,9 @@ for platform in "${PLATFORMS[@]}"; do
     [[ "$got" == "mimiry $version "* ]] || die "the $platform binary says '$got', not $version"
     echo "verified: $got"
   fi
-  cp LICENSE README.md dist/stage/
+  cp LICENSE NOTICE README.md dist/stage/
   archive="mimiry_${version#v}_${os}_${arch}.tar.gz"
-  tar -czf "dist/$archive" -C dist/stage mimiry LICENSE README.md || die "could not pack $archive"
+  tar -czf "dist/$archive" -C dist/stage mimiry LICENSE NOTICE README.md || die "could not pack $archive"
   rm -f dist/stage/*
   echo "built: dist/$archive"
 done
