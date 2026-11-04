@@ -1,0 +1,1623 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mimiry Organizations API",
+    "version": "1.0.0",
+    "description": "Organization management API for the Mimiry platform. Create and manage\norganizations, invite members, and control access.\n\n## Authentication\n\nAll endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/v1/auth/token`) or portal login.\n\n## Async Operations\n\nMutating operations (create, update, delete, invite, etc.) return\n`202 Accepted` with a `request_id` and a `status_url`. Poll the status\nendpoint, or stream it, to learn the outcome: the `202` means the request\nwas accepted, not that it succeeded. A status is kept for 15 minutes.\n\n```\nPOST /api/organizations/v1 → 202 { request_id, status_url }\nGET  /api/organizations/v1/operations/{request_id} → { status: \"completed\" }\n```\n\n## Roles in an organization\n\n| Role | What it allows |\n|------|----------------|\n| **owner** | Everything below, plus changing members' roles, transferring ownership, winding down and deleting the organization. |\n| **admin** | Changing the organization's name, slug and settings; inviting members; removing members other than the owner; revoking invitations. |\n| **member** | Reading the organization, its members and its pending invitations. Leaving. |\n\nOperations marked **(requires elevated rights)** need one of these rights in\nthe organization. Without it the answer is `403`.\n",
+    "contact": {
+      "name": "Mimiry Platform",
+      "url": "https://mimiry.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com",
+      "description": "The Mimiry instance serving these docs"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Organizations",
+      "description": "Create, read, update, and delete organizations."
+    },
+    {
+      "name": "Members",
+      "description": "Manage organization membership."
+    },
+    {
+      "name": "Invitations",
+      "description": "Invite users and manage invitations."
+    },
+    {
+      "name": "Operations",
+      "description": "Track async operation status."
+    }
+  ],
+  "paths": {
+    "/api/organizations/v1": {
+      "post": {
+        "operationId": "createOrganization",
+        "summary": "Create an organization",
+        "description": "Creates a new organization. The authenticated user becomes the owner.\nOrdinary accounts may create organizations; an account that exists only\nto join organizations it is invited to may not, and gets `403`.\n\nThe slug must be globally unique and is used in URLs. It is normalized\nto lowercase and must start with `o-`, followed by 1–32 lowercase\nletters, digits and single hyphens (not at either end). A slug without\nthe prefix is rejected with `400 invalid_slug`.\n\nReturns `202 Accepted`: the organization is created asynchronously.\nPoll the `status_url`; on completion its `result.organization` is the\nnew organization.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrgRequest"
+              },
+              "example": {
+                "name": "Acme Corp",
+                "slug": "o-acme-corp"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "This account may not create organizations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Your account type does not allow creating organizations"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The slug is taken (`slug_exists`), or another request is claiming\nit right now (`slug_pending`, retry).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "slug_exists",
+                  "message": "An organization with this slug already exists"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listOrganizations",
+        "summary": "List your organizations",
+        "description": "Returns the organizations the authenticated user owns or is a member of,\none page at a time.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "slug",
+                "role",
+                "member_count",
+                "created_at"
+              ],
+              "default": "name"
+            },
+            "description": "Field to sort by. `role` is the caller's role in each organization.\nAn unknown field is refused with `400`.\n"
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "Sort direction."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of organizations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "organizations",
+                    "total_count",
+                    "limit",
+                    "offset"
+                  ],
+                  "properties": {
+                    "organizations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Organization"
+                      }
+                    },
+                    "total_count": {
+                      "type": "integer",
+                      "description": "Organizations in all pages."
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        }
+      ],
+      "get": {
+        "operationId": "getOrganization",
+        "summary": "Get organization by ID",
+        "description": "Returns the organization, its members and settings. Members only.",
+        "tags": [
+          "Organizations"
+        ],
+        "responses": {
+          "200": {
+            "description": "The organization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/NotAMember"
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateOrganization",
+        "summary": "Update organization (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Changes the organization's name, slug or settings. The owner or an\nadmin may. Only the fields given are changed.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrgRequest"
+              },
+              "example": {
+                "name": "Acme Corporation",
+                "allow_member_invites": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller is not the owner or an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Only owner or admin can update organization"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrganization",
+        "summary": "Delete organization (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Deletes the organization. Only the owner may. This cannot be undone.\n\nDeletion is refused while the organization has other members or\ninvitations that can still be accepted; the operation then ends\n`failed` and its `error` names what is in the way. To retire an\norganization that still has members, wind it down first.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller is not the owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Only the owner can delete an organization"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/wind-down": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        }
+      ],
+      "post": {
+        "operationId": "startWindDown",
+        "summary": "Start winding down an organization (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Starts retiring the organization. Only the owner may.\n\nA wind-down freezes the organization: no new members, invitations,\nsessions or volumes. Members keep read access for `readable_days`,\nafter which the organization can be deleted. Volumes are kept for\n`volume_grace_days` and are billed until then.\n\nWhether the caller is the owner is decided when the request is\nprocessed, so a refusal arrives as a `failed` operation.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WindDownRequest"
+              },
+              "example": {
+                "readable_days": 30,
+                "drain_sessions": true,
+                "volume_grace_days": 7,
+                "reason": "Project finished"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "description": "A bound is out of range.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "readable_days is required (1-90); volume_grace_days must be 0-30"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cancelWindDown",
+        "summary": "Cancel a wind-down (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Ends a wind-down and unfreezes the organization. Only the owner may;\na refusal arrives as a `failed` operation.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/by-slug/{slug}": {
+      "get": {
+        "operationId": "getOrganizationBySlug",
+        "summary": "Get organization by slug",
+        "description": "Returns the organization by slug. Members only. The slug is normalized\nto lowercase.\n",
+        "tags": [
+          "Organizations"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "o-acme-corp"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The organization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/NotAMember"
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/members": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        }
+      ],
+      "get": {
+        "operationId": "listMembers",
+        "summary": "List organization members",
+        "description": "Returns every member of the organization. Members only.",
+        "tags": [
+          "Members"
+        ],
+        "responses": {
+          "200": {
+            "description": "The members.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "members"
+                  ],
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Member"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/NotAMember"
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/members/invite": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        }
+      ],
+      "post": {
+        "operationId": "inviteMember",
+        "summary": "Invite a member (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Invites someone by email address or by username: exactly one of the\ntwo. The owner or an admin may.\n\nThe role is `admin` or `member`. An invitation can be accepted for\n7 days.\n",
+        "tags": [
+          "Invitations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteMemberRequest"
+              },
+              "example": {
+                "email": "jane@example.com",
+                "role": "member"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "description": "Neither or both of `email` and `username`, or an unknown role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Exactly one of 'email' or 'username' is required"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller is not the owner or an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "You don't have permission to invite members"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such organization, or no user with that username.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "No user with that username"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/members/{user_id}/role": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        },
+        {
+          "$ref": "#/components/parameters/MemberUserId"
+        }
+      ],
+      "patch": {
+        "operationId": "updateMemberRole",
+        "summary": "Change a member's role (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Changes a member's role to `admin` or `member`. Only the owner may.\nNobody can change their own role or the owner's; ownership moves with\ntransfer-ownership instead.\n",
+        "tags": [
+          "Members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRoleRequest"
+              },
+              "example": {
+                "role": "admin"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "description": "An unknown role, or the caller's own or the owner's role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Cannot change the owner's role"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller is not the owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Only organization owner can change member roles"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such organization, or the user is not a member of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Member not found in organization"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/members/{user_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        },
+        {
+          "$ref": "#/components/parameters/MemberUserId"
+        }
+      ],
+      "delete": {
+        "operationId": "removeMember",
+        "summary": "Remove a member (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Removes a member. The owner or an admin may remove anyone but the\nowner. Any member may remove themselves, which is how to leave an\norganization.\n",
+        "tags": [
+          "Members"
+        ],
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "description": "The owner cannot be removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Cannot remove organization owner"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller may not remove this member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "You don't have permission to remove this member"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/transfer-ownership": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        }
+      ],
+      "post": {
+        "operationId": "transferOrgOwnership",
+        "summary": "Transfer ownership (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Hands the organization to another member. Only the owner may, and the\nnew owner must already be a member.\n\nBoth are decided when the request is processed, so a refusal arrives\nas a `failed` operation.\n",
+        "tags": [
+          "Members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              },
+              "example": {
+                "new_owner_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "400": {
+            "description": "`new_owner_id` is missing or not a UUID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "new_owner_id is required and must be a UUID"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/invitations": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        }
+      ],
+      "get": {
+        "operationId": "listInvitations",
+        "summary": "List pending invitations",
+        "description": "Lists the organization's invitations that can still be accepted:\npending and not expired. Members only.\n",
+        "tags": [
+          "Invitations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of invitations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "invitations",
+                    "total_count",
+                    "limit",
+                    "offset"
+                  ],
+                  "properties": {
+                    "invitations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Invitation"
+                      }
+                    },
+                    "total_count": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/NotAMember"
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          },
+          "503": {
+            "description": "The invitations could not be read. This is not a statement that\nthere are none. Retry.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Could not read invitations; this is not a statement that there are none. Retry.",
+                  "code": "INVITATIONS_UNAVAILABLE"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/{id}/invitations/{invitation_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OrgId"
+        },
+        {
+          "name": "invitation_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "revokeInvitation",
+        "summary": "Revoke an invitation (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Withdraws a pending invitation, so it can no longer be accepted. The\nowner or an admin may. An invitation that is no longer pending is not\nchanged, and the operation ends `failed`.\n",
+        "tags": [
+          "Invitations"
+        ],
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller is not the owner or an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Only the organization owner or an admin can revoke an invitation"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/OrgNotFound"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/invitations/{token}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/InvitationToken"
+        }
+      ],
+      "get": {
+        "operationId": "getInvitation",
+        "summary": "Check an invitation",
+        "description": "Says whether the caller may accept the invitation, before they try.\nAcceptance itself is decided when it is processed; this is a preview.\n\nA caller the invitation is not addressed to learns only that:\n`can_accept` is false with a `reason`, and nothing about the\norganization. The invitee also gets the organization, the role and\nthe expiry.\n",
+        "tags": [
+          "Invitations"
+        ],
+        "responses": {
+          "200": {
+            "description": "The verdict, and the details for the invitee.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreview"
+                },
+                "example": {
+                  "can_accept": true,
+                  "org_id": "550e8400-e29b-41d4-a716-446655440000",
+                  "org_name": "Acme Corp",
+                  "role": "member",
+                  "status": "pending",
+                  "expires_at": "2026-11-10T12:00:00Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Invitation not found or no longer valid",
+                  "code": "NOT_FOUND"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The invitation could not be read right now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Could not verify this invitation right now",
+                  "code": "PRECHECK_UNAVAILABLE"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/invitations/{token}/accept": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/InvitationToken"
+        }
+      ],
+      "post": {
+        "operationId": "acceptInvitation",
+        "summary": "Accept an invitation",
+        "description": "Accepts an invitation with the token from the invitation email. It must\nbe addressed to the caller: their account, or their email address. A\nrefusal arrives as a `failed` operation.\n",
+        "tags": [
+          "Invitations"
+        ],
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/Accepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/operations/{request_id}": {
+      "get": {
+        "operationId": "getOperationStatus",
+        "summary": "Get operation status",
+        "description": "Returns the status of an asynchronous operation. Poll this endpoint\nafter receiving a `202 Accepted` response.\n\nAnswers `202` while pending, and `200` when completed or failed. A\nstatus is kept for 15 minutes.\n",
+        "tags": [
+          "Operations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation completed or failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Operation still pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Operation not found or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Operation not found or expired"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organizations/v1/operations/{request_id}/stream": {
+      "get": {
+        "operationId": "streamOperationStatus",
+        "summary": "Stream operation status (SSE)",
+        "description": "Streams status updates for an asynchronous operation as Server-Sent\nEvents. The connection stays open until the operation completes or\nfails.\n\n```javascript\nconst source = new EventSource(\n  '/api/organizations/v1/operations/' + requestId + '/stream',\n  { headers: { 'Authorization': 'Bearer ' + token } }\n);\nsource.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  if (data.status === 'completed' || data.status === 'failed') {\n    source.close();\n  }\n};\n```\n",
+        "tags": [
+          "Operations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of status updates.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token obtained via SSH signature exchange (`POST /api/v1/auth/token`)\nor portal login (`POST /api/auth/v1/login`).\n\nInclude in the `Authorization` header:\n```\nAuthorization: Bearer <token>\n```\n"
+      }
+    },
+    "parameters": {
+      "OrgId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "The organization's ID."
+      },
+      "MemberUserId": {
+        "name": "user_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "The member's user ID."
+      },
+      "InvitationToken": {
+        "name": "token",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "The token from the invitation email."
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        },
+        "description": "Maximum number of items to return. Clamped to [1, 100]; defaults to 50."
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "description": "Number of items to skip from the start of the (sorted) result set."
+      },
+      "RequestId": {
+        "name": "request_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Unique identifier of the asynchronous operation."
+      }
+    },
+    "responses": {
+      "Accepted": {
+        "description": "Accepted for processing. Poll `status_url` for the outcome.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AsyncResponse"
+            }
+          }
+        }
+      },
+      "NotAMember": {
+        "description": "The caller is not a member of the organization.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Access denied"
+            }
+          }
+        }
+      },
+      "OrgNotFound": {
+        "description": "No such organization.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Organization not found"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "Whether the request is allowed could not be determined right now. Retry.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "The request could not be completed right now. Retry."
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid request parameters or body.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required or credentials invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Unauthorized"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Unexpected server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Internal server error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Organization": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner_name": {
+            "type": "string",
+            "description": "The owner's display name. In list answers only."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            }
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ]
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "invited_by": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "allow_member_invites": {
+            "type": "boolean",
+            "description": "NOT IN EFFECT. Stored and returned, but only the owner and admins can invite, whatever its value.\n",
+            "deprecated": true
+          },
+          "require_2fa": {
+            "type": "boolean",
+            "description": "NOT YET ENFORCED. The value is stored and returned, but no login or org-access path reads it — members without 2FA are not blocked. Do not rely on this as a security control.\n",
+            "deprecated": true
+          }
+        }
+      },
+      "Invitation": {
+        "type": "object",
+        "description": "An invitation that can still be accepted. It is addressed to an email\naddress or to an account, so one of `email` and `invited_user_id` is\nset.\n",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "invited_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "invited_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InvitationPreview": {
+        "type": "object",
+        "required": [
+          "can_accept"
+        ],
+        "properties": {
+          "can_accept": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "USER_MISMATCH",
+              "EMAIL_MISMATCH",
+              "NO_TARGET",
+              "NOT_PENDING",
+              "EXPIRED"
+            ],
+            "description": "Why the caller cannot accept. Absent when they can."
+          },
+          "message": {
+            "type": "string",
+            "example": "This invitation was sent to a different email address"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "For the invitee only, as are the fields below."
+          },
+          "org_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "expired",
+              "declined",
+              "revoked"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreateOrgRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "slug"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "description": "Organization display name."
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 34,
+            "pattern": "^o-[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "URL-safe identifier, normalized to lowercase: `o-` followed by 1–32\nlowercase letters, digits and single hyphens. A few bodies are\nreserved (for example `admin`).\n",
+            "example": "o-acme-corp"
+          }
+        }
+      },
+      "UpdateOrgRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 3
+          },
+          "slug": {
+            "type": "string",
+            "description": "A new slug, by the same rules as at creation.",
+            "example": "o-acme-corporation"
+          },
+          "allow_member_invites": {
+            "type": "boolean",
+            "description": "NOT IN EFFECT. Accepted and stored, but only the owner and admins can invite, whatever its value.\n",
+            "deprecated": true
+          },
+          "require_2fa": {
+            "type": "boolean",
+            "description": "NOT YET ENFORCED. Accepted and stored, but no login or org-access path reads it. Setting it true does not protect the org.\n",
+            "deprecated": true
+          }
+        }
+      },
+      "InviteMemberRequest": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "The invitee's email address. Give this or `username`."
+          },
+          "username": {
+            "type": "string",
+            "description": "The invitee's username. Give this or `email`."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          }
+        }
+      },
+      "UpdateMemberRoleRequest": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          }
+        }
+      },
+      "TransferOwnershipRequest": {
+        "type": "object",
+        "required": [
+          "new_owner_id"
+        ],
+        "properties": {
+          "new_owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Must already be a member of the organization."
+          }
+        }
+      },
+      "WindDownRequest": {
+        "type": "object",
+        "required": [
+          "readable_days"
+        ],
+        "properties": {
+          "readable_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 90,
+            "description": "How long members keep read access before the organization can be deleted."
+          },
+          "drain_sessions": {
+            "type": "boolean",
+            "description": "Let running sessions finish instead of ending them."
+          },
+          "volume_grace_days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30,
+            "description": "Keep volumes this many days. They are billed until then, and the\ngrace cannot be longer than `readable_days`.\n"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message describing what went wrong."
+          },
+          "code": {
+            "type": "string",
+            "description": "Machine-readable error code for programmatic handling."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message with additional detail."
+          }
+        },
+        "example": {
+          "error": "invalid_request",
+          "code": "VALIDATION_ERROR",
+          "message": "Email field is required"
+        }
+      },
+      "AsyncResponse": {
+        "type": "object",
+        "description": "Response returned when an operation is accepted for asynchronous processing.",
+        "required": [
+          "request_id",
+          "status",
+          "message",
+          "status_url"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for tracking this operation."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ],
+            "description": "Initial status of the operation."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description of the accepted operation."
+          },
+          "status_url": {
+            "type": "string",
+            "description": "URL to poll for operation status updates."
+          },
+          "retry_after": {
+            "type": "integer",
+            "description": "Suggested number of seconds before polling for status."
+          }
+        },
+        "example": {
+          "request_id": "550e8400-e29b-41d4-a716-446655440000",
+          "status": "pending",
+          "message": "Request accepted and is being processed",
+          "status_url": "/api/organizations/v1/operations/550e8400-e29b-41d4-a716-446655440000",
+          "retry_after": 2
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "description": "Status of an asynchronous operation.",
+        "required": [
+          "request_id",
+          "status"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ],
+            "description": "Current status of the operation."
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Operation result data (present when status is \"completed\")."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message (present when status is \"failed\")."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

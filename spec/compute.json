@@ -1,0 +1,3083 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mimiry Compute API",
+    "version": "1.0.0",
+    "description": "GPU compute session management and billing API for the Mimiry platform.\nLaunch GPU-powered compute sessions, manage SSH access, and track billing.\n\n## Authentication\n\nMost endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/v1/auth/token`) or portal login. The **GPU Availability** and\n**GPU Catalog** endpoints are public and require no authentication.\n\n## Sessions\n\nSessions have two dimensions:\n\n- **`state`** (where the session is): `submitted` → `provisioned` →\n  `booting` → `setting_up` → `pulling_image` → `running`. A session whose\n  container has exited is `exited` (the outcome is in `exit_code`); one\n  whose workload is over while its machine is kept is `idle`. Ending\n  passes through `terminating` to `terminated`. A step that fails stops\n  in `provision_failed`, `boot_failed`, `setup_failed`, `pull_failed` or\n  `start_failed`. Every state except `terminated` and `provision_failed`\n  has a machine behind it and is billed. Only a live session can be\n  terminated: `submitted`, `provisioned`, `booting`, `boot_failed`,\n  `setting_up`, `setup_failed`, `pulling_image`, `pull_failed`,\n  `start_failed`, `running` and `idle`. Terminating any other answers\n  `400 invalid_state`.\n- **`operation`** (what is happening now): `provisioning`,\n  `starting__setting_up`, `starting__pulling_image`,\n  `starting__starting_container`, `stopping__stopping_container`,\n  `terminating`. Absent when nothing is in progress.\n\nSSH access is enabled by default. While a session is `running`, its SSH\nconnection details are included in the response.\n\n## Billing\n\nSessions are billed per-GPU-hour from the authenticated user's credit\nbalance. All prices are in **EUR**. Check your balance before launching\nsessions. Credits are added to your account by Mimiry.\n\n## Async Operations\n\nCreating or terminating a session, and creating, extending or deleting a\nvolume, return `202 Accepted` with an absolute `status_url`. Poll it for\nthe outcome.\n\n## Errors\n\nAn error body is `{\"error\": \"<code>\", \"message\": \"<text>\"}`. The code is\nlower-case and stable (`unauthorized`, `not_found`, `validation_failed`,\n…); the message is for people and may change. Some errors add fields:\n`validation_failed` lists `errors[]` of `{field, message}`, and\n`insufficient_balance` and `quota_exceeded` carry their figures.\n\nA `404` with a JSON body means the resource was not found. A path or method\nthat does not exist answers `404` with the plain-text body\n`404 page not found` once you are signed in, and `401` before.\n",
+    "contact": {
+      "name": "Mimiry Platform",
+      "url": "https://mimiry.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com",
+      "description": "The Mimiry instance serving these docs"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Catalog",
+      "description": "Browse available GPU models and technical specs."
+    },
+    {
+      "name": "Availability",
+      "description": "Check GPU availability and pricing before launching sessions."
+    },
+    {
+      "name": "Sessions",
+      "description": "Create and manage GPU compute sessions."
+    },
+    {
+      "name": "Quota",
+      "description": "View usage quotas and limits."
+    },
+    {
+      "name": "Billing",
+      "description": "Credit balance and transaction history."
+    },
+    {
+      "name": "Volumes",
+      "description": "Persistent block volumes scoped per organization. Volumes survive\nacross sessions — attaching a volume to a session is non-destructive,\nand the volume detaches (not deletes) when the session ends.\n"
+    }
+  ],
+  "paths": {
+    "/api/compute/v1/catalog": {
+      "get": {
+        "operationId": "getCatalog",
+        "summary": "List GPU models",
+        "description": "Returns the GPU catalog — technical specifications for all known GPU\nmodels. Includes both statically-configured models and dynamically-\ndiscovered models from cloud providers.\n\n**No authentication required.**\n\n### Example\n\n```bash\ncurl \"https://api.example.com/api/compute/v1/catalog\"\n```\n",
+        "tags": [
+          "Catalog"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "GPU catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogResponse"
+                },
+                "example": {
+                  "gpu_models": [
+                    {
+                      "name": "H100_80G_SXM",
+                      "display_name": "NVIDIA H100 80GB SXM",
+                      "family": "H100",
+                      "vram_gb": 80,
+                      "form_factor": "SXM",
+                      "architectures": [
+                        "HOPPER"
+                      ],
+                      "fp16_tflops": 989.4
+                    },
+                    {
+                      "name": "RTX_48G_PCIe",
+                      "display_name": "NVIDIA RTX 48GB PCIe",
+                      "family": "RTX",
+                      "vram_gb": 48,
+                      "form_factor": "PCIe",
+                      "architectures": [
+                        "AMPERE",
+                        "ADA"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compute/v1/availability": {
+      "get": {
+        "operationId": "checkAvailability",
+        "summary": "Check GPU availability",
+        "description": "Returns availability, pricing, and provider information for GPU models\nacross all configured cloud providers.\n\n**No authentication required.** This endpoint is public and returns\nno user-specific data. Offerings are refreshed by the platform on its\nown schedule; a request never triggers a provider query.\n\n### Filters\n\nA filter sent with no value (`?min_hourly_rate=`, `?location=`) is\nrejected with **400** naming the parameter. Leave a filter out to apply\nno filter.\n\n### Pricing\n\nAll prices are in **EUR** and include the platform margin. The\n`providers` array on each GPU model shows per-provider rates and\nlocations, sorted by `hourly_rate` ascending.\n\n🚨 **The cheapest entry is not always purchasable.** A provider's rate\ncomes from our price catalogue and its `locations` from live stock, which\nmove on different cycles — so `providers[0]` can carry a real price with\n`available: false` and no matching listing under `skus[]`. To find the\ncheapest GPU you can actually start now, filter on\n`providers[].available` first, or read `skus[].listings[]`. With the\ndefault `available_only=true` it holds only purchasable listings; with\n`available_only=false` it also holds listings with `available: false`.\n\n### Use cases\n- Pre-flight check before creating a session\n- Status dashboard showing which GPU types are available\n- CLI tooling to select the best GPU type\n- Price comparison across providers\n\n### Examples\n\n```bash\n# All available GPUs (summary)\ncurl \"https://api.example.com/api/compute/v1/availability\"\n\n# Filter by family, include unavailable, full details\ncurl \"https://api.example.com/api/compute/v1/availability?gpu_family=H100&available_only=false&detail=full\"\n\n# Minimum VRAM filter\ncurl \"https://api.example.com/api/compute/v1/availability?min_vram_gb=40\"\n```\n",
+        "tags": [
+          "Availability"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by compute provider name (e.g. `verda`). Only returns GPU\nmodels offered by this provider.\n",
+            "example": "verda"
+          },
+          {
+            "name": "gpu_family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by GPU family. Comma-separated for multiple families.\n",
+            "example": "H100,A100"
+          },
+          {
+            "name": "form_factor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by form factor. Comma-separated for multiple values.\n",
+            "example": "SXM"
+          },
+          {
+            "name": "min_vram_gb",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum VRAM in GB. A value that is not a non-negative integer is\ncurrently treated as 0 (no filter) rather than refused.\n",
+            "example": 40
+          },
+          {
+            "name": "min_gpu_count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum GPU count per configuration. A value that is not a\nnon-negative integer is currently treated as 0 (no filter) rather\nthan refused.\n"
+          },
+          {
+            "name": "min_hourly_rate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": 0
+            },
+            "description": "Only listings priced at or above this hourly rate (EUR, post-margin).\nInclusive.\n",
+            "example": 1.5
+          },
+          {
+            "name": "max_hourly_rate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": 0
+            },
+            "description": "Only listings priced at or below this hourly rate (EUR, post-margin).\nInclusive.\n\n**These two filter `skus[].listings[]`, not `providers[].hourly_rate`.**\nA model's headline rate is the cheapest listing we know of, and it is\nnot necessarily one that can be bought: on 2026-09-30\n`RTX_96G_PCIe` advertised EUR 1.3624 — a variant with no stock — while\nits only in-stock listing cost EUR 2.4590. A price filter has to read\nthe unit that gets transacted, so it reads the listing. A model with\nno listing left inside the band is omitted from the response\nentirely rather than returned with an empty `skus[]`.\n\n🚨 `providers[].hourly_rate` is NOT narrowed by the band, so it can\nsit below `min_hourly_rate`. That is not a contradiction: it is the\ncatalogue's cheapest known rate for the model, band or no band.\nRead `skus[].listings[].hourly_rate` for what you can buy.\n\nA value that cannot be parsed, a negative value, or a\n`min_hourly_rate` above `max_hourly_rate` returns **400**, never an\nempty list — \"nothing is available in your budget\" and \"your filter\ncould not be applied\" are different answers and must not look alike.\n\nThe same two names are accepted on session create as\n`gpu.min_hourly_rate` / `gpu.max_hourly_rate`, so a band you can\nbrowse is a band you can buy in.\n",
+            "example": 2
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by location (e.g. `FIN-01`).",
+            "example": "FIN-01"
+          },
+          {
+            "name": "available_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Show only available GPUs and purchasable listings. Only the exact\nvalue `true` (the default when omitted) keeps the filter; any other\nvalue turns it off.\n"
+          },
+          {
+            "name": "include_cpu",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Include machines with no GPU. Only the exact value `true` includes\nthem.\n"
+          },
+          {
+            "name": "detail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "full"
+              ],
+              "default": "summary"
+            },
+            "description": "Response detail level (any value other than `full` means `summary`):\n- `summary` — `name`, `display_name`, `family`, `vram_gb`,\n  `available`, `currency`, `providers` and `skus`\n- `full` — adds `form_factor`, `fp16_tflops`, `configurations` and\n  `price_updated_at`\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Availability results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityResponse"
+                },
+                "examples": {
+                  "summary": {
+                    "summary": "Summary response",
+                    "value": {
+                      "gpu_models": [
+                        {
+                          "name": "H100_80G_SXM",
+                          "display_name": "NVIDIA H100 80GB SXM",
+                          "family": "H100",
+                          "vram_gb": 80,
+                          "available": true,
+                          "currency": "EUR",
+                          "skus": [
+                            {
+                              "sku": "H100_80G_SXM_1X_30V_120M",
+                              "architecture": "HOPPER",
+                              "gpu_count": 1,
+                              "vcpus": 30,
+                              "memory_gb": 120,
+                              "available": true,
+                              "from_hourly_rate": 2.1,
+                              "currency": "EUR",
+                              "listings": [
+                                {
+                                  "location": "FIN-01",
+                                  "hourly_rate": 2.1,
+                                  "available": true
+                                }
+                              ]
+                            }
+                          ],
+                          "providers": [
+                            {
+                              "hourly_rate": 1.98,
+                              "locations": [],
+                              "available": false
+                            },
+                            {
+                              "hourly_rate": 2.1,
+                              "locations": [
+                                "FIN-01"
+                              ],
+                              "available": true
+                            }
+                          ]
+                        },
+                        {
+                          "name": "T4",
+                          "display_name": "NVIDIA T4 16GB",
+                          "family": "T4",
+                          "vram_gb": 16,
+                          "available": true,
+                          "currency": "EUR",
+                          "providers": [
+                            {
+                              "hourly_rate": 0.32,
+                              "locations": [
+                                "FIN-01"
+                              ],
+                              "available": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A filter that could not be applied: a filter sent with no value, an\nunparseable or negative rate, or `min_hourly_rate` above\n`max_hourly_rate`.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "message": "min_hourly_rate (3) is above max_hourly_rate (2), so no listing can match"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The platform's offerings could not be read. (When prices alone are\nunavailable the answer is currently `200` with `gpu_models: null`,\nnot this; treat a `null` list as \"could not tell\", not as \"nothing\navailable\".)\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "service_unavailable",
+                  "message": "Unable to fetch availability data. Try again later."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compute/v1/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "summary": "Create a compute session",
+        "description": "Launches a new GPU compute session. The session is provisioned\nasynchronously — poll `GET /api/compute/v1/sessions/{id}` for status.\n\n### Defaults\n- `ssh_enabled`: `true`\n- `auto_terminate`: `true` (terminates when command completes)\n- `result_storage`: `\"script_managed\"`\n\n### Billing\nSessions are always billed to the authenticated user's personal credit\nbalance. Requires sufficient credit balance (EUR). Returns `402` if\nbalance is insufficient or no billing account exists.\n\n### Example\n\n```bash\ncurl -X POST https://api.example.com/api/compute/v1/sessions \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"name\": \"training-run\",\n    \"image\": {\"uri\": \"nvcr.io/nvidia/pytorch:24.01-py3\"},\n    \"gpu\": {\"types\": [\"H100_80G_SXM\"], \"count\": 1},\n    \"ssh_public_key\": \"ssh-ed25519 AAAA... user@host\"\n  }'\n```\n",
+        "tags": [
+          "Sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              },
+              "example": {
+                "name": "training-run",
+                "image": {
+                  "uri": "nvcr.io/nvidia/pytorch:24.01-py3"
+                },
+                "gpu": {
+                  "types": [
+                    "H100_80G_SXM"
+                  ],
+                  "count": 1
+                },
+                "memory": {
+                  "min_gb": 32
+                },
+                "ssh_enabled": true,
+                "ssh_public_key": "ssh-ed25519 AAAA... user@host",
+                "auto_terminate": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Session creation accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                },
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440000",
+                  "status": "pending",
+                  "message": "Session creation in progress",
+                  "status_url": "https://api.example.com/api/compute/v1/sessions/550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was refused before anything was created. Checks run in\nthis order: the body is read (`invalid_request`), validated\n(`validation_failed`, every problem listed in `errors[]`), the\norganisation is resolved (`no_organization`,\n`ambiguous_organization`, only with `volume_mounts` and no\n`org_id`), and the SSH key is checked (`invalid_ssh_key`).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ValidationFailedError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                },
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Validation failed",
+                    "value": {
+                      "error": "validation_failed",
+                      "message": "Request validation failed",
+                      "errors": [
+                        {
+                          "field": "image.uri",
+                          "message": "image URI must be from an allowed registry"
+                        }
+                      ]
+                    }
+                  },
+                  "invalid_request": {
+                    "summary": "Unreadable body",
+                    "value": {
+                      "error": "invalid_request",
+                      "message": "Key: 'CreateSessionRequest.GPU.Count' Error:Field validation for 'Count' failed on the 'max' tag"
+                    }
+                  },
+                  "ambiguous_organization": {
+                    "summary": "Several organisations, none named",
+                    "value": {
+                      "error": "ambiguous_organization",
+                      "message": "You belong to 2 organizations — pass org_id explicitly when mounting volumes. Available: 7d0f1c2e-5a8b-4c3d-9e1f-2a3b4c5d6e7f, 0b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+                    }
+                  },
+                  "invalid_ssh_key": {
+                    "summary": "Unknown SSH key",
+                    "value": {
+                      "error": "invalid_ssh_key",
+                      "message": "SSH key not found or doesn't belong to user"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "Insufficient credits or no billing account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientBalanceError"
+                },
+                "examples": {
+                  "insufficient": {
+                    "summary": "Insufficient balance",
+                    "value": {
+                      "error": "insufficient_balance",
+                      "message": "Insufficient balance to start job (need €10.00, have €2.50)",
+                      "required": 10,
+                      "available": 2.5,
+                      "currency": "EUR"
+                    }
+                  },
+                  "no_account": {
+                    "summary": "No billing account",
+                    "value": {
+                      "error": "no_billing_account",
+                      "message": "No billing account found. Contact support to add credits."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An `org_id` was given that is not one of the caller's organisations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "not_found",
+                  "message": "Organization not found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No machine can take the session now (`gpu_unavailable`), or the\norganisation is not accepting new work (`org_not_found`,\n`org_winding_down`, `org_retired`, `org_not_accepting`).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GPUUnavailableError"
+                },
+                "examples": {
+                  "gpu_unavailable": {
+                    "summary": "No machine available",
+                    "value": {
+                      "error": "gpu_unavailable",
+                      "message": "No machine matches type H100_80G_SXM. Run 'mirc session availability' to see what is available.",
+                      "gpu_types": [
+                        "H100_80G_SXM"
+                      ]
+                    }
+                  },
+                  "org_winding_down": {
+                    "summary": "Organisation winding down",
+                    "value": {
+                      "error": "org_winding_down",
+                      "message": "This organization is winding down and cannot take on new members, invitations or resources. Cancel the wind-down if it was started in error, or create the resource under another organization."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A quota is reached. `limit` names it: `max_concurrent_jobs`,\n`max_gpu_hours_daily` or `max_gpu_hours_monthly`. `resets_at` is\n`null` for the concurrent limit.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaExceededError"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "Prices (`pricing_unavailable`) or the organisation's status\n(`org_admission_unavailable`) could not be read. Nothing was\ncreated; retry shortly.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "pricing_unavailable",
+                  "message": "GPU pricing temporarily unavailable. Please try again shortly."
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listSessions",
+        "summary": "List your sessions",
+        "description": "Returns all compute sessions for the authenticated user.\nEvents are omitted from list responses — use `GET /sessions/{id}`\nfor event details.\n\n### Filtering\n\n- `state` / `state_not` — comma-separated lists of session states.\n  A single value (`?state=running`) is parsed as a one-element\n  inclusion list.\n- `operation` / `operation_not` — comma-separated lists of primary\n  operation values (provisioning, starting, stopping, terminating).\n  The backend prefix-matches against compound values, so\n  `?operation=starting` covers `starting__setting_up`,\n  `starting__pulling_image`, and `starting__starting_container`.\n  Empty string is a valid token (filters resting sessions).\n- `updated_after` / `updated_before` — RFC 3339 timestamps bounding\n  the last *durable state change*. `updated_after` is inclusive,\n  `updated_before` is exclusive. Either bound is optional. To\n  express \"updated on date D\", pass `updated_after=D` and\n  `updated_before=D+1day` — no rounding ambiguity.\n- `org_id` — sessions attributed to that organisation. An organisation\n  you are not in, or a value matching nothing, gives an empty list.\n\nAll filters are AND-combined. An invalid state, operation or timestamp\nreturns `400 invalid_filter`.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SessionState"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Inclusion filter — keep sessions whose state is in this comma-separated list."
+          },
+          {
+            "name": "state_not",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SessionState"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Exclusion filter — drop sessions whose state is in this comma-separated list."
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SessionOperationPrimary"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Inclusion filter on the primary operation (e.g. `starting`).\nBackend prefix-matches against compound values, so `starting`\ncovers `starting__setting_up`, `starting__pulling_image`, and\n`starting__starting_container`.\n"
+          },
+          {
+            "name": "operation_not",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SessionOperationPrimary"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Exclusion filter on the primary operation. Same prefix-match semantics."
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Lower bound (inclusive) on the session's last durable state-change timestamp."
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Upper bound (exclusive) on the session's last durable state-change timestamp."
+          },
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Keep sessions attributed to this organisation."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidFilter"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/sessions/{id}": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "Get session details",
+        "description": "Returns details for a specific session including status and SSH\nconnection info (when running).\n\n### SSH Access\n\nWhile a session is `running` and has `ssh_enabled: true`, the\nresponse includes SSH connection details:\n\n```json\n{\n  \"ssh\": {\n    \"host\": \"gpu-node-1.compute.mimiry.com\",\n    \"port\": 22,\n    \"username\": \"user\"\n  }\n}\n```\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "events_tail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 3
+            },
+            "description": "Number of events to include (newest first). Default `3`. Any\nnegative value (such as `-1`) includes all events; `0`, none. A value\nthat is not an integer means `3`. `events_total` always shows the\ntotal count regardless of this parameter.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSession",
+        "summary": "Terminate a session",
+        "description": "Terminates a live session: `submitted`, `provisioned`, `booting`,\n`boot_failed`, `setting_up`, `setup_failed`, `pulling_image`,\n`pull_failed`, `start_failed`, `running` or `idle`. An `idle` session\nstill holds its machine and is billed, so terminate it when you are done.\nReturns `202 Accepted`; the termination is processed asynchronously.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Termination accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                },
+                "example": {
+                  "id": "550e8400-e29b-41d4-a716-446655440000",
+                  "status": "terminating",
+                  "message": "Termination in progress",
+                  "status_url": "https://api.example.com/api/compute/v1/sessions/550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The session is not live (`exited`, `terminating`, `terminated` or `provision_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "invalid_state",
+                  "message": "Cannot terminate session in 'exited' state"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/sessions/{id}/logs": {
+      "get": {
+        "operationId": "getSessionLogs",
+        "summary": "Get session logs",
+        "description": "Returns a session's log lines: the container's output and the\nplatform's messages about the session, read from the log store.\n\nAvailable in every state, including after the session has ended, for\nas long as the lines are retained. A session that has only just\nstarted may return no lines yet.\n\n### Retries\nIf the log store cannot be reached, returns `503` with\n`retry_after_seconds`. Retry after the indicated interval.\n\n### Example\n\n```bash\ncurl \"https://api.example.com/api/compute/v1/sessions/{id}/logs?tail=50\" \\\n  -H \"Authorization: Bearer $TOKEN\"\n```\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 100
+            },
+            "description": "Number of most recent lines to return. A value above 5000 means\n5000; a value that is not a positive integer means 100.\n"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Start of the window: an RFC 3339 timestamp, or a duration back from\nnow in hours, minutes or seconds (`30m`, `24h`, `1h30m`). Defaults\nto the last 24 hours. A value that is neither — including days, such\nas `7d` — currently also means the last 24 hours rather than being\nrefused.\n"
+          },
+          {
+            "name": "timestamps",
+            "in": "query",
+            "required": false,
+            "deprecated": true,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Accepted for compatibility; has no effect."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log output retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLogsResponse"
+                },
+                "example": {
+                  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+                  "logs": "2026-06-01T06:41:10.123Z [container]  epoch 1/10 loss=0.45\n2026-06-01T06:41:12.456Z [container]  epoch 2/10 loss=0.32\n",
+                  "truncated": false,
+                  "lines_requested": 100
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "The log store could not be read. Retry after `retry_after_seconds`.\nWhen the field is absent, this instance has no log store and\nretrying will not help.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryableError"
+                },
+                "example": {
+                  "error": "logs_unavailable",
+                  "message": "Log store temporarily unavailable. Try again shortly.",
+                  "retry_after_seconds": 5
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/compute/v1/sessions/{id}/health": {
+      "get": {
+        "operationId": "getSessionHealth",
+        "summary": "Get a session's live machine metrics",
+        "description": "The latest metrics the session's machine reported: GPU utilisation,\nmemory, temperature and power, host memory, and the container's status.\nThe machine reports every 30 seconds while it runs, and a report is kept\nfor 2 minutes. `age_seconds` says how old this one is.\n\nOnly the machine's first GPU is reported; on a multi-GPU machine the GPU\nfigures are GPU 0's.\n\nA session with no report in the last 2 minutes — not yet running, ended,\nor not reporting — answers `404 no_health_data`.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The latest report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHealthResponse"
+                },
+                "example": {
+                  "gpu_util": 87,
+                  "gpu_mem_util": 41,
+                  "gpu_mem_used_mb": 33210,
+                  "gpu_mem_total_mb": 81559,
+                  "gpu_temp_c": 64,
+                  "gpu_power_w": 412.5,
+                  "mem_total_kb": 247421912,
+                  "mem_avail_kb": 198334120,
+                  "container_status": "running",
+                  "received_at": "2026-11-02T14:03:30Z",
+                  "age_seconds": 12.4
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "The session does not exist or is not yours (`not_found`), or there\nis no report from its machine in the last 2 minutes\n(`no_health_data`).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "no_health_data",
+                  "message": "No health data available for this session"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/quota": {
+      "get": {
+        "operationId": "getQuota",
+        "summary": "Get usage quota",
+        "description": "Returns current quota usage and limits for the authenticated user. A\nlimit of `0` means unlimited.\n",
+        "tags": [
+          "Quota"
+        ],
+        "responses": {
+          "200": {
+            "description": "Quota information.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaInfo"
+                },
+                "example": {
+                  "max_concurrent_jobs": 3,
+                  "current_jobs": 1,
+                  "max_gpu_hours_daily": 24,
+                  "gpu_hours_used_today": 2.5,
+                  "max_gpu_hours_monthly": 500,
+                  "gpu_hours_used_month": 45,
+                  "last_daily_reset": "2026-11-02T00:00:00Z",
+                  "last_monthly_reset": "2026-11-01T00:00:00Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/balance": {
+      "get": {
+        "operationId": "getBalance",
+        "summary": "Get your credit balance",
+        "description": "Returns the credit balance for the authenticated user's personal\nbilling account. All amounts are in EUR. A caller with no billing\naccount yet gets every amount `0` and `active_sessions: null`.\n",
+        "tags": [
+          "Billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceResponse"
+                },
+                "example": {
+                  "account_type": "user",
+                  "account_id": "d24ef3e3-6516-4d9a-bef0-25d62eb5a346",
+                  "balance": 100,
+                  "reserved": 4.2,
+                  "available": 95.8,
+                  "currency": "EUR",
+                  "total_deposited": 150,
+                  "total_spent": 50,
+                  "estimated_balance": 95,
+                  "active_sessions": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/balance/org/{id_or_name}": {
+      "get": {
+        "operationId": "getOrgBalance",
+        "summary": "Get an organization's balance (requires elevated rights)",
+        "x-requires-elevated-rights": true,
+        "description": "Returns the credit balance for an organization. Requires membership\nin the organization: a UUID you are not a member of answers `403`,\nwhether or not the organisation exists.\n\nAn organisation with no billing account of its own bills the account\nthat agreed to pay for it. Only that payer is shown those figures;\nany other member reads a zero balance.\n",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "name": "id_or_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Organization ID (UUID) or slug."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "A slug that names no organisation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "not_found",
+                  "message": "Organization not found"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/transactions": {
+      "get": {
+        "operationId": "getTransactions",
+        "summary": "Get transaction history",
+        "description": "Returns billing transaction history for the authenticated user,\nsorted newest-first. Paginate with `limit` / `offset` per the\nplatform list-response convention.\n",
+        "tags": [
+          "Billing"
+        ],
+        "parameters": [
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Keep rows created at or after this RFC 3339 time (inclusive)."
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Keep rows created before this RFC 3339 time (exclusive)."
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "credit",
+                "debit"
+              ]
+            },
+            "description": "Keep only credits or only debits."
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Keep the rows that charged one session or volume. A resource that\nis not yours, or unknown, gives an empty page.\n"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidFilter"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/volumes": {
+      "post": {
+        "operationId": "createVolume",
+        "summary": "Create a block volume",
+        "description": "Creates a new persistent block volume. The owning organization is\nspecified by `org_id` in the request body — the caller must be a\nmember of that organization. `org_id` may be left out when the caller\nbelongs to exactly one organization.\n\nVolume names are unique within the organization, and stay reserved\nafter a volume is deleted. A taken name is not refused here: the\nrequest is accepted (`202`) and the volume then ends `failed`, with a\n`reason` naming the clash.\n\nThe volume is provisioned asynchronously — poll\n`GET /api/compute/v1/volumes/{volume_id}` for status.\n\n### Example\n\n```bash\ncurl -X POST https://api.example.com/api/compute/v1/volumes \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"org_id\": \"<uuid>\", \"name\": \"training-data\", \"size_gb\": 100, \"volume_type\": \"nvme\"}'\n```\n",
+        "tags": [
+          "Volumes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVolumeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Volume creation accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                },
+                "example": {
+                  "id": "8b0e7a9c-1f2d-4e3c-9a5b-6c7d8e9f0a1b",
+                  "status": "creating",
+                  "message": "Volume creation in progress",
+                  "status_url": "https://api.example.com/api/compute/v1/volumes/8b0e7a9c-1f2d-4e3c-9a5b-6c7d8e9f0a1b"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body could not be read or failed a basic check\n(`invalid_request`: a size outside 100–10000 GB, a `volume_type`\nother than `nvme` or `hdd`), the `location` is not one volumes can\nbe created in (`invalid_location`), or no `org_id` was given and the\ncaller belongs to none or several organizations\n(`no_organization`, `ambiguous_organization`).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "message": "volume_type must be 'nvme' or 'hdd'"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "The organization does not exist or the caller is not a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "not_found",
+                  "message": "Organization not found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The organization is not accepting new resources (`org_not_found`,\n`org_winding_down`, `org_retired`, `org_not_accepting`).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "The organization's status could not be read (`org_admission_unavailable`). Retry shortly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listVolumes",
+        "summary": "List your volumes",
+        "description": "Returns all volumes the caller has access to (across every\norganization the user is a member of). Filtering mirrors the\nsessions API — see `GET /sessions` for full semantics.\n\n- `org_id` — narrow to one organization the user belongs to. An\n  organization you are not in gives an empty list.\n- `attached` — `true` keeps volumes attached to a session, `false`\n  those that are not. Any other value is refused.\n- `state` / `state_not` — comma-separated lists of volume states.\n- `operation` / `operation_not` — primary operation values\n  (provisioning, resizing, deleting). Prefix-matches compound\n  values, so `?operation=deleting` covers both\n  `deleting__detaching_volume` and `deleting__deleting_volume`.\n- `updated_after` / `updated_before` — half-open RFC 3339\n  interval `[after, before)` on the last *durable state change*.\n\nAND across all params. An invalid value returns `400 invalid_filter`.\n",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional filter — limit results to one organization."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/VolumeState"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Inclusion filter — keep volumes whose state is in this comma-separated list."
+          },
+          {
+            "name": "state_not",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/VolumeState"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Exclusion filter — drop volumes whose state is in this comma-separated list."
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/VolumeOperationPrimary"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Inclusion filter on the primary operation (e.g. `deleting`).\nBackend prefix-matches against compound values, so `deleting`\ncovers `deleting__detaching_volume` and `deleting__deleting_volume`.\n"
+          },
+          {
+            "name": "operation_not",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/VolumeOperationPrimary"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "description": "Exclusion filter on the primary operation. Same prefix-match semantics."
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Lower bound (inclusive) on the volume's last durable state-change timestamp."
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Upper bound (exclusive) on the volume's last durable state-change timestamp."
+          },
+          {
+            "name": "attached",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Keep attached volumes (`true`) or unattached ones (`false`)."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Volume list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidFilter"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/compute/v1/volumes/{volume_id}": {
+      "get": {
+        "operationId": "getVolume",
+        "summary": "Get volume details",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "name": "volume_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Volume details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteVolume",
+        "summary": "Delete a volume",
+        "description": "Permanently deletes a volume. A volume attached to a session is\ndetached first and then deleted: its `operation` moves through\n`deleting__detaching_volume` to `deleting__deleting_volume`, and it ends\nin state `deleted`. Deleting a volume already being deleted is\naccepted again.\n\nDeletion is asynchronous; poll the volume until its state is `deleted`.\n",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "name": "volume_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Volume deletion accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                },
+                "example": {
+                  "id": "8b0e7a9c-1f2d-4e3c-9a5b-6c7d8e9f0a1b",
+                  "status": "deleting",
+                  "message": "Volume deletion in progress",
+                  "status_url": "https://api.example.com/api/compute/v1/volumes/8b0e7a9c-1f2d-4e3c-9a5b-6c7d8e9f0a1b"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The volume is already deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "invalid_state",
+                  "message": "Volume is already deleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "extendVolume",
+        "summary": "Extend (resize) a volume",
+        "description": "Increases the size of a volume. Shrinking is not supported.\nExtension is asynchronous: the volume's `operation` is `resizing` while\nit runs, and its state stays `provisioned` throughout.\n",
+        "tags": [
+          "Volumes"
+        ],
+        "parameters": [
+          {
+            "name": "volume_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendVolumeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Volume extension accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                },
+                "example": {
+                  "id": "8b0e7a9c-1f2d-4e3c-9a5b-6c7d8e9f0a1b",
+                  "status": "extending",
+                  "message": "Volume extension in progress",
+                  "status_url": "https://api.example.com/api/compute/v1/volumes/8b0e7a9c-1f2d-4e3c-9a5b-6c7d8e9f0a1b"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new size is not larger than the current one, or outside 100–10000 GB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "invalid_request",
+                  "message": "New size (100 GB) must be larger than current size (200 GB)"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token obtained via SSH signature exchange (`POST /api/v1/auth/token`)\nor portal login (`POST /api/auth/v1/login`).\n\nInclude in the `Authorization` header:\n```\nAuthorization: Bearer <token>\n```\n"
+      }
+    },
+    "parameters": {
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        },
+        "description": "Maximum number of items to return, 1 to 100. A value above 100 means\n100; a value that is not a positive integer means 50.\n"
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "description": "Number of items to skip. A value that is not a non-negative integer\nmeans 0.\n"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request could not be read, or a field failed a basic check.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "invalid_request",
+              "message": "Key: 'CreateVolumeRequest.SizeGB' Error:Field validation for 'SizeGB' failed on the 'min' tag"
+            }
+          }
+        }
+      },
+      "InvalidFilter": {
+        "description": "A list filter could not be applied. The message names it.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "invalid_filter",
+              "message": "type must be \"credit\" or \"debit\""
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "No valid access token.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "unauthorized",
+              "message": "missing authorization token"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The caller may not read this resource.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "forbidden",
+              "message": "You must be a member of this organization to view its balance"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The resource does not exist, or is not the caller's.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "not_found",
+              "message": "Session not found"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "An unexpected failure on the platform's side. Retry later.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "internal_error",
+              "message": "Failed to retrieve session"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SessionState": {
+        "type": "string",
+        "description": "Durable lifecycle stage of a session. See the Sessions section of the overview.",
+        "enum": [
+          "submitted",
+          "provisioned",
+          "booting",
+          "boot_failed",
+          "setting_up",
+          "setup_failed",
+          "pulling_image",
+          "pull_failed",
+          "start_failed",
+          "running",
+          "idle",
+          "exited",
+          "terminating",
+          "provision_failed",
+          "terminated"
+        ]
+      },
+      "SessionOperation": {
+        "type": "string",
+        "description": "Transient indicator of the in-progress activity on a session.\nFormat: `<primary>` or `<primary>__<sub_step>`. Empty when the\nsession is at a durable resting state.\n",
+        "enum": [
+          "",
+          "provisioning",
+          "starting__setting_up",
+          "starting__pulling_image",
+          "starting__starting_container",
+          "stopping__stopping_container",
+          "terminating"
+        ]
+      },
+      "SessionOperationPrimary": {
+        "type": "string",
+        "description": "Primary (top-level) activity portion of `SessionOperation`.\nUsed in `?operation=` query filters — backend prefix-matches\ncompound values from the same family.\n",
+        "enum": [
+          "provisioning",
+          "starting",
+          "stopping",
+          "terminating"
+        ]
+      },
+      "VolumeState": {
+        "type": "string",
+        "description": "Durable lifecycle stage of a block volume.",
+        "enum": [
+          "submitted",
+          "provisioned",
+          "failed",
+          "deleted"
+        ]
+      },
+      "VolumeOperation": {
+        "type": "string",
+        "description": "Transient indicator of the in-progress activity on a volume.\nFormat and rules mirror `SessionOperation`.\n",
+        "enum": [
+          "",
+          "provisioning",
+          "resizing",
+          "deleting__detaching_volume",
+          "deleting__deleting_volume"
+        ]
+      },
+      "VolumeOperationPrimary": {
+        "type": "string",
+        "description": "Primary activity portion of `VolumeOperation`. Used in `?operation=` query filters.",
+        "enum": [
+          "provisioning",
+          "resizing",
+          "deleting"
+        ]
+      },
+      "CatalogResponse": {
+        "type": "object",
+        "properties": {
+          "gpu_models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GPUCatalogEntry"
+            }
+          }
+        }
+      },
+      "GPUCatalogEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Canonical GPU model name (e.g. `H100_SXM`).",
+            "example": "H100_SXM"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "NVIDIA H100 80GB SXM"
+          },
+          "family": {
+            "type": "string",
+            "example": "H100"
+          },
+          "vram_gb": {
+            "type": "integer",
+            "example": 80
+          },
+          "form_factor": {
+            "type": "string",
+            "example": "SXM"
+          },
+          "architectures": {
+            "type": "array",
+            "description": "The silicon generations this MODEL spans, as SKU tokens, oldest\nfirst. Always present; never null.\n\nPlural because a canonical model is not one machine:\n`RTX_48G_PCIe` is served by an RTX A6000 (AMPERE) and an RTX 6000\nAda (ADA), which is why the generation is part of the SKU. Use\n`/availability` when you need the architecture of a specific\nmachine — there it is a single value per SKU.\n\nEmpty means we have no generation to report: either the model has\nno GPU (`vram_gb` is 0) or no live machine of it carried an\narchitecture we recognise.\n",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VOLTA",
+                "TURING",
+                "AMPERE",
+                "ADA",
+                "HOPPER",
+                "BLKWL"
+              ]
+            },
+            "example": [
+              "AMPERE",
+              "ADA"
+            ]
+          },
+          "fp16_tflops": {
+            "type": "number",
+            "example": 989.4
+          }
+        }
+      },
+      "AvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "gpu_models": {
+            "type": "array",
+            "nullable": true,
+            "description": "The matching GPU models. Currently `null`, not `[]`, when nothing\nmatches — and also when prices could not be read, so treat `null`\nas \"could not tell\" rather than \"nothing available\".\n",
+            "items": {
+              "$ref": "#/components/schemas/GPUModelAvailability"
+            }
+          }
+        }
+      },
+      "GPUModelAvailability": {
+        "type": "object",
+        "description": "Availability and pricing for a GPU model. When `detail=full` is\nrequested, additional fields are included (form_factor, fp16_tflops,\nprice_updated_at, configurations).\n\nArchitecture is NOT one of them, and its absence is deliberate: a\nmodel is a product family, so the generation belongs to the SKU\nbeneath it, not to the model. `detail=full` carried a model-level\n`architecture` until 2026-08-28; it was removed because it was incomplete\nand disagreed with the SKUs beneath it.\n",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Canonical GPU model name.",
+            "example": "H100_80G_SXM"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "NVIDIA H100 80GB SXM"
+          },
+          "family": {
+            "type": "string",
+            "example": "H100"
+          },
+          "vram_gb": {
+            "type": "integer",
+            "example": 80
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether the GPU is currently available from at least one provider."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "EUR"
+            ],
+            "description": "Always EUR."
+          },
+          "providers": {
+            "type": "array",
+            "description": "Per-provider pricing, sorted by hourly_rate ascending. An entry with\n`available: false` is a price we are not currently able to serve —\nsee ProviderPrice.available.\n",
+            "items": {
+              "$ref": "#/components/schemas/ProviderPrice"
+            }
+          },
+          "skus": {
+            "type": "array",
+            "description": "The machine shapes this model is sold in, sorted by `sku`. Present\nin both detail levels; never null.\n",
+            "items": {
+              "$ref": "#/components/schemas/SKU"
+            }
+          },
+          "form_factor": {
+            "type": "string",
+            "description": "Only in `detail=full` response.",
+            "example": "SXM"
+          },
+          "fp16_tflops": {
+            "type": "number",
+            "description": "Only in `detail=full` response.",
+            "example": 989.4
+          },
+          "price_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When pricing was last refreshed. Only in `detail=full`."
+          },
+          "configurations": {
+            "type": "array",
+            "description": "Hardware configurations available. Only in `detail=full`.",
+            "items": {
+              "$ref": "#/components/schemas/GPUConfiguration"
+            }
+          }
+        }
+      },
+      "SKU": {
+        "type": "object",
+        "description": "One buyable machine shape of a model, and where it is offered.",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "The machine's identity: canonical name, an architecture segment for\nfamilies that span generations, then GPU count (`X`), vCPUs (`V`)\nand memory in GB (`M`), and `_CC` when confidential.\n",
+            "example": "H100_80G_SXM_1X_30V_120M"
+          },
+          "architecture": {
+            "type": "string",
+            "description": "Silicon generation (`AMPERE`, `ADA`, `HOPPER`, `BLKWL`, `VOLTA`, `TURING`), or `-` when unknown.",
+            "example": "HOPPER"
+          },
+          "gpu_count": {
+            "type": "integer"
+          },
+          "vcpus": {
+            "type": "integer"
+          },
+          "memory_gb": {
+            "type": "integer"
+          },
+          "confidential": {
+            "type": "boolean",
+            "description": "Present and `true` for a confidential-computing machine."
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "from_hourly_rate": {
+            "type": "number",
+            "description": "The cheapest listing's hourly rate, in `currency`."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "EUR"
+            ]
+          },
+          "listings": {
+            "type": "array",
+            "description": "Where the shape is offered, sorted by `hourly_rate`.",
+            "items": {
+              "$ref": "#/components/schemas/SKUListing"
+            }
+          }
+        }
+      },
+      "SKUListing": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "Absent unless the platform exposes provider names (see ProviderPrice.provider)."
+          },
+          "location": {
+            "type": "string",
+            "example": "FIN-01"
+          },
+          "instance_type": {
+            "type": "string"
+          },
+          "hourly_rate": {
+            "type": "number"
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProviderPrice": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "Provider name.\n\n🚨 **Withheld by default since 2026-09-29 — the field is ABSENT, not\nempty.** Absence asserts nothing; an empty string would assert that the\nname IS empty. Read it with a presence check, never as a string. Naming\nthe vendor behind an offering is a commercial decision, currently\n\"no\": it can build trust and it can also send a customer straight to\nthe vendor. Controlled at runtime\n(`compute_expose_provider_names`), so it may be populated on some\ndeployments and empty on others. Do not build a filter that requires\nit without first checking that a non-empty value came back — an empty\nname matches nothing and reads as \"no results\".\n\nEverything else in the entry stays true when the name is withheld:\nthe number of providers, their rates, locations and availability.\n",
+            "example": "verda"
+          },
+          "hourly_rate": {
+            "type": "number",
+            "description": "Our price in EUR for this provider.",
+            "example": 2.1
+          },
+          "locations": {
+            "type": "array",
+            "description": "Locations where this provider **currently has stock**. Empty when\n`available` is false.\n",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "FIN-01"
+            ]
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether this provider can serve this GPU **right now**. Not the same\nquestion as the model's `available`, which is true if ANY provider\nhas stock.\n\nA provider can be listed with a rate and `available: false`: the rate\ncomes from our price catalogue, which is refreshed on a slower cycle\nthan stock. So this entry means \"we sell this, not at this moment\" —\nit is a real price, and not one you can buy today.\n\nSince 2026-09-29. Absent from older responses; treat a missing field\nas unknown rather than as false.\n",
+            "example": true
+          }
+        }
+      },
+      "GPUConfiguration": {
+        "type": "object",
+        "properties": {
+          "gpu_count": {
+            "type": "integer",
+            "example": 1
+          },
+          "vcpus": {
+            "type": "integer",
+            "example": 30
+          },
+          "memory_gb": {
+            "type": "integer",
+            "example": 240
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateSessionRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "image",
+          "gpu"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])?$",
+            "description": "Session display name: letters, digits, `-` and `_`, starting and\nending with a letter or digit.\n"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Organization the session is attributed to; it must be one of yours\n(otherwise `404 not_found`), and the organization must be accepting\nnew work. Billing is always the caller's own account. When omitted,\na session with `volume_mounts` takes the caller's only organization\n(`400 no_organization` with none, `400 ambiguous_organization` with\nseveral); one without stays personal.\n"
+          },
+          "image": {
+            "type": "object",
+            "required": [
+              "uri"
+            ],
+            "properties": {
+              "uri": {
+                "type": "string",
+                "description": "Container image URI. It must start with an allowed registry —\n`nvcr.io/`, `docker.io/`, `ghcr.io/`, `gcr.io/` or `quay.io/` —\nor be a Docker Hub short form whose first segment has no `.`\n(`nvidia/cuda:12.3.1-runtime-ubuntu22.04`). A bare name with no\n`/` (`ubuntu:22.04`) is refused.\n",
+                "example": "nvcr.io/nvidia/pytorch:24.01-py3"
+              }
+            }
+          },
+          "gpu": {
+            "type": "object",
+            "description": "Selects the machine. At least one of `types`, `family`, `vram_gb`,\n`form_factor`, `architecture`, a vCPU or memory bound, `max_vram_gb`,\n`max_gpu_count` or `priority` is required; the price bounds alone\nare not a selection.\n",
+            "properties": {
+              "types": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Acceptable GPU types, as canonical names from `/catalog` or\n`/availability` (case-sensitive).\n",
+                "example": [
+                  "H100_80G_SXM",
+                  "A100_80G_SXM"
+                ]
+              },
+              "family": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Acceptable GPU families, in preference order (e.g. `H100`).",
+                "example": [
+                  "H100"
+                ]
+              },
+              "vram_gb": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "Acceptable VRAM sizes in GB; the smallest is the VRAM floor.",
+                "example": [
+                  80
+                ]
+              },
+              "form_factor": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "PCIe",
+                    "SXM"
+                  ]
+                },
+                "description": "Acceptable form factors (case-sensitive)."
+              },
+              "architecture": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Acceptable silicon generations: `ampere`, `ada` (or\n`ada lovelace`, `lovelace`), `hopper`, `blackwell` (or `blkwl`),\n`volta`, `turing`. Case-insensitive.\n",
+                "example": [
+                  "hopper"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8,
+                "default": 1,
+                "description": "Minimum number of GPUs on the machine. For an exact count, also\nset `max_gpu_count` to the same value.\n"
+              },
+              "max_gpu_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8,
+                "description": "Maximum number of GPUs on the machine; not below `count`."
+              },
+              "max_vram_gb": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum VRAM in GB; not below the smallest `vram_gb`."
+              },
+              "min_vcpus": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Minimum vCPUs on the machine."
+              },
+              "max_vcpus": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum vCPUs on the machine; not below `min_vcpus`."
+              },
+              "priority": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "PRICE",
+                    "GPU",
+                    "FAMILY",
+                    "FORM_FACTOR",
+                    "VRAM",
+                    "ARCH"
+                  ]
+                },
+                "description": "How candidates are ordered. Every key but `PRICE` needs its\nselector set (`GPU` → `types`, `FAMILY` → `family`,\n`FORM_FACTOR` → `form_factor`, `VRAM` → `vram_gb`, `ARCH` →\n`architecture`). Default: `[\"GPU\"]` for a request with only\n`types`, otherwise `[\"PRICE\"]`.\n"
+              },
+              "max_attempts": {
+                "type": "integer",
+                "description": "How many candidate machines to try before giving up. Absent, or\n0 or less, means 3.\n"
+              },
+              "provider": {
+                "type": "string",
+                "description": "Preferred compute provider (hint, not guaranteed). Falls back to best available if this provider doesn't offer the requested GPU. See /availability endpoint for provider names.",
+                "example": "verda"
+              },
+              "location": {
+                "type": "string",
+                "description": "Preferred location/region (hint, not guaranteed). Falls back to any available location. See /availability endpoint for location values.",
+                "example": "FIN-01"
+              },
+              "min_memory_gb": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Minimum host RAM in GB. Machines with less are not selected.",
+                "example": 64
+              },
+              "max_memory_gb": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum host RAM in GB. Machines with more are not selected.",
+                "example": 256
+              },
+              "min_hourly_rate": {
+                "type": "number",
+                "format": "double",
+                "minimum": 0,
+                "description": "Price floor (EUR, post-margin, per hour). Candidates priced below\nit are not selected. Inclusive.\n",
+                "example": 1.5
+              },
+              "max_hourly_rate": {
+                "type": "number",
+                "format": "double",
+                "minimum": 0,
+                "description": "Price ceiling (EUR, post-margin, per hour). Candidates priced\nabove it are not selected. Inclusive.\n\nThese are the same two names `/availability` accepts as query\nparameters, and they mean the same thing, so a band you browsed\nis a band you can provision in.\n\n🚨 **The affordability check follows the band.** The gate demands\none hour of balance against the cheapest machine the request can\nbe filled by, so a floor raises the amount required — it has to,\nor you would be approved on a machine the selector is not\npermitted to pick.\n\nA negative value, or `min_hourly_rate` above `max_hourly_rate`,\nis rejected with **400**. An impossible band that returned\n\"no capacity\" would blame the market for a typo.\n\nThere is no exact form. Rates are post-margin values derived from\nan FX conversion, so an equality filter would match nothing the\nmoment the last decimal moved; pass a narrow band instead.\n",
+                "example": 2
+              }
+            }
+          },
+          "memory": {
+            "type": "object",
+            "properties": {
+              "min_gb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1024,
+                "description": "Minimum host RAM in GB. Used as `gpu.min_memory_gb` when that\nfield is not given; when both are given, `gpu.min_memory_gb`\nwins. Prefer `gpu.min_memory_gb` / `gpu.max_memory_gb`.\n"
+              }
+            }
+          },
+          "command": {
+            "type": "string",
+            "description": "Command to run in the session."
+          },
+          "environment_vars": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Environment variables. A name containing `SECRET`, `PASSWORD` or\n`TOKEN`, in any case, is refused.\n"
+          },
+          "ssh_enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable SSH access to the session."
+          },
+          "ssh_key_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of a registered SSH key to use."
+          },
+          "ssh_public_key": {
+            "type": "string",
+            "description": "SSH public key for session access. Required when `ssh_enabled: true` and no `ssh_key_id` is provided. Accepts any OpenSSH public key format (e.g., `ssh-ed25519 AAAA... user@host`)."
+          },
+          "auto_terminate": {
+            "description": "Auto-terminate behavior. Accepts `true` (= `on_complete`),\n`false` (= `never`), or an object `{\"mode\": \"on_complete\"|\"on_success\"|\"never\", \"timeout_seconds\": 0}`.\nDefault: `true`.\n",
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "on_complete",
+                      "on_success",
+                      "never"
+                    ]
+                  },
+                  "timeout_seconds": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ]
+          },
+          "max_duration": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Longest the session may live, in seconds, counted from its start\n(or creation, before it starts). Absent, or 0 or less, means the\nplatform default of 24 hours. When `auto_terminate.timeout_seconds`\nis also set, the shorter of the two applies.\n"
+          },
+          "result_storage": {
+            "type": "string",
+            "enum": [
+              "script_managed"
+            ],
+            "default": "script_managed",
+            "description": "How session results are stored. Currently only script_managed is supported."
+          },
+          "volume_mounts": {
+            "type": "array",
+            "description": "Persistent block volumes to attach to this session. Volumes must\nalready exist in the session's organization (create them via\n`POST /api/compute/v1/volumes` first). Volumes detach (not delete)\nwhen the session ends. A volume, and a mount path, may appear once.\n",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMountSpec"
+            }
+          }
+        }
+      },
+      "SessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The organization the session is attributed to; absent for a personal session."
+          },
+          "state": {
+            "$ref": "#/components/schemas/SessionState"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/SessionOperation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last durable state-change timestamp. Bumped only on transitions\nof `state` (submitted → provisioned, running → exited, etc.) —\nNOT on transient `operation` flips, billing checkpoints, or\nevent-log appends. Use with `?updated_after=` / `?updated_before=`\non the list endpoint to find sessions changed in a given window.\n"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ssh": {
+            "type": "object",
+            "description": "SSH connection details (only when running and SSH enabled).",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          },
+          "ssh_enabled": {
+            "type": "boolean"
+          },
+          "auto_terminate": {
+            "type": "object",
+            "description": "Auto-terminate configuration, always an object here.",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "on_complete",
+                  "on_success",
+                  "never"
+                ]
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "description": "Timeout in seconds; absent means the server default."
+              }
+            }
+          },
+          "result_storage": {
+            "type": "string",
+            "enum": [
+              "script_managed"
+            ]
+          },
+          "gpu_type": {
+            "type": "string"
+          },
+          "gpu_count": {
+            "type": "integer"
+          },
+          "exit_code": {
+            "type": "integer",
+            "description": "Container exit code (set after container exits)."
+          },
+          "stop_reason": {
+            "type": "string",
+            "enum": [
+              "user_requested",
+              "timed_out",
+              "balance_depleted",
+              "vendor_instance_gone",
+              "system_error"
+            ],
+            "description": "Why the session was halted by an external force before it finished. Absent when the workload finished by itself — a session that ran to completion, or whose container exited on its own, is not \"stopped\" and carries no stop reason. `vendor_instance_gone` means the provider no longer had the machine and the platform released the session; `system_error` means the platform stopped it after a failure on our side.\n"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if session failed."
+          },
+          "events": {
+            "type": "array",
+            "description": "Session timeline events (newest first). Controlled by `events_tail`\nquery param. Omitted from list endpoint.\n",
+            "items": {
+              "type": "object",
+              "properties": {
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "event": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "details": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "events_total": {
+            "type": "integer",
+            "description": "Total number of events available. Use `events_tail=-1` to fetch all."
+          },
+          "billing": {
+            "type": "object",
+            "description": "What this session costs. Every phase is billed: provisioning, boot,\nimage pull and running. The machine is held for you, and paid for,\nfrom the moment the provider creates it, so billing starts at\n`billed_from`, not at `started_at` (the container start). A session\nthat never got a machine is not billed. A minimum charge per session\nmay apply, so `final_cost` can exceed `duration_seconds` ×\n`hourly_rate`.\n",
+            "properties": {
+              "hourly_rate": {
+                "type": "number",
+                "description": "Rate in `currency` per hour, fixed when the machine is chosen."
+              },
+              "currency": {
+                "type": "string",
+                "example": "EUR"
+              },
+              "provider": {
+                "type": "string",
+                "description": "Absent unless the platform exposes provider names (see ProviderPrice.provider)."
+              },
+              "billed_from": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When billing started: the moment the provider created the\nmachine. Absent until a machine exists, and on sessions\nrecorded before 2026-10-27.\n"
+              },
+              "running_cost": {
+                "type": "number",
+                "description": "While the session is live, the cost so far: the time since\n`billed_from` at `hourly_rate`. An estimate; `final_cost` is the\namount charged.\n"
+              },
+              "duration_seconds": {
+                "type": "integer",
+                "description": "While the session is live, the seconds since `billed_from`.\nOnce it has ended, the duration it was billed for.\n"
+              },
+              "final_cost": {
+                "type": "number",
+                "description": "The amount charged for the session, set when it ends. Equal to\nthe sum of its charges in the transaction history.\n"
+              },
+              "committed_total": {
+                "type": "number",
+                "description": "What has been charged so far, at the billing checkpoints passed."
+              },
+              "reserved_amount": {
+                "type": "number",
+                "description": "Credit currently held for this session against your balance."
+              },
+              "checkpoint_count": {
+                "type": "integer",
+                "description": "Billing checkpoints passed so far."
+              }
+            }
+          }
+        }
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "description": "Canonical list-response shape — see API-CONVENTIONS-LIST.md.\n`sessions` is always present and never null (empty list is `[]`).\n`total_count` is the total before pagination; `limit`/`offset`\nreflect the applied pagination.\n",
+        "required": [
+          "sessions",
+          "total_count",
+          "limit",
+          "offset",
+          "unavailable"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionResponse"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "unavailable": {
+            "type": "integer",
+            "description": "Sessions that exist but could not be read on this request; they are\nmissing from `sessions` and from `total_count`. `0` when the page is\ncomplete.\n"
+          }
+        }
+      },
+      "AcceptedResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "terminating",
+              "creating",
+              "deleting",
+              "extending"
+            ],
+            "description": "`pending` (session create), `terminating` (session terminate),\n`creating`, `deleting` or `extending` (volume create, delete,\nextend).\n"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Absolute URL of the resource to poll for the outcome."
+          }
+        }
+      },
+      "SessionHealthResponse": {
+        "type": "object",
+        "properties": {
+          "gpu_util": {
+            "type": "number",
+            "description": "GPU utilisation, percent."
+          },
+          "gpu_mem_util": {
+            "type": "number",
+            "description": "GPU memory-controller utilisation, percent."
+          },
+          "gpu_mem_used_mb": {
+            "type": "number",
+            "description": "GPU memory in use, MiB."
+          },
+          "gpu_mem_total_mb": {
+            "type": "number",
+            "description": "GPU memory in total, MiB."
+          },
+          "gpu_temp_c": {
+            "type": "number",
+            "description": "GPU temperature, °C."
+          },
+          "gpu_power_w": {
+            "type": "number",
+            "description": "GPU power draw, W."
+          },
+          "mem_total_kb": {
+            "type": "integer",
+            "description": "Host memory in total, kB."
+          },
+          "mem_avail_kb": {
+            "type": "integer",
+            "description": "Host memory available, kB."
+          },
+          "container_status": {
+            "type": "string",
+            "description": "The container's status as Docker reports it (`running`, `exited`, …), or `unknown`."
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the platform received this report."
+          },
+          "age_seconds": {
+            "type": "number",
+            "description": "Seconds since `received_at`."
+          }
+        }
+      },
+      "QuotaInfo": {
+        "type": "object",
+        "properties": {
+          "max_concurrent_jobs": {
+            "type": "integer"
+          },
+          "current_jobs": {
+            "type": "integer"
+          },
+          "max_gpu_hours_daily": {
+            "type": "number"
+          },
+          "gpu_hours_used_today": {
+            "type": "number"
+          },
+          "max_gpu_hours_monthly": {
+            "type": "number"
+          },
+          "gpu_hours_used_month": {
+            "type": "number"
+          },
+          "resets_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_daily_reset": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the daily usage was last reset; `0001-01-01T00:00:00Z` when not known."
+          },
+          "last_monthly_reset": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the monthly usage was last reset; `0001-01-01T00:00:00Z` when not known."
+          }
+        }
+      },
+      "BalanceResponse": {
+        "type": "object",
+        "properties": {
+          "account_type": {
+            "type": "string",
+            "enum": [
+              "user",
+              "org"
+            ]
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "balance": {
+            "type": "number",
+            "description": "Current credit balance in EUR."
+          },
+          "reserved": {
+            "type": "number",
+            "description": "Credit held against running sessions and volumes."
+          },
+          "available": {
+            "type": "number",
+            "description": "`balance` minus `reserved`: what new work can draw on."
+          },
+          "currency": {
+            "type": "string",
+            "example": "EUR"
+          },
+          "total_deposited": {
+            "type": "number"
+          },
+          "total_spent": {
+            "type": "number"
+          },
+          "estimated_balance": {
+            "type": "number",
+            "description": "Balance minus estimated running session costs."
+          },
+          "active_sessions": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Sessions billed to this account that are still running or holding\na machine. `null` when the platform could not count them on this\nread, which is not the same as `0`.\n"
+          },
+          "account_kind": {
+            "type": "string",
+            "enum": [
+              "test"
+            ],
+            "description": "`test` on an account used for automated testing; absent on an ordinary account."
+          }
+        }
+      },
+      "TransactionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "account_type": {
+            "type": "string",
+            "enum": [
+              "user",
+              "org"
+            ]
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "credit",
+              "debit"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "balance_after": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 code denominating `amount` and `balance_after`. Always EUR\ntoday. Read it rather than assuming it: an assumption baked into every\nconsumer is expensive to unpick on the day it stops holding.\n",
+            "example": "EUR"
+          },
+          "description": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The session or volume this row charged. Absent for deposits, which\ncharge no resource.\n"
+          },
+          "resource_type": {
+            "type": "string",
+            "description": "What `resource_id` refers to. `none` means the row charges no\nresource by nature (a deposit); an ABSENT value means the row was\nnever classified, which is a different answer from `none` and must\nnot be rendered as one.\n",
+            "enum": [
+              "session",
+              "volume",
+              "none"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TransactionListResponse": {
+        "type": "object",
+        "description": "Canonical list-response shape — see API-CONVENTIONS-LIST.md.\n",
+        "required": [
+          "transactions",
+          "total_count",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransactionResponse"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "SessionLogsResponse": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "logs": {
+            "type": "string",
+            "description": "Log lines, oldest first, one per line: a UTC timestamp with\nmilliseconds, the origin in brackets (`[session]`, `[instance]` or\n`[container]`, with `:warn` or `:error` appended for those\nseverities), then the message.\n"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "`true` when as many lines as `tail` were returned, so older lines may exist."
+          },
+          "lines_requested": {
+            "type": "integer",
+            "description": "The `tail` value used for the request."
+          }
+        }
+      },
+      "RetryableError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retry_after_seconds": {
+            "type": "integer",
+            "description": "Suggested number of seconds to wait before retrying."
+          }
+        }
+      },
+      "InsufficientBalanceError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "required": {
+            "type": "number"
+          },
+          "available": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          }
+        }
+      },
+      "QuotaExceededError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "quota_exceeded"
+            ]
+          },
+          "limit": {
+            "type": "string",
+            "enum": [
+              "max_concurrent_jobs",
+              "max_gpu_hours_daily",
+              "max_gpu_hours_monthly"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "current": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          },
+          "resets_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the limit resets; `null` for the concurrent-session limit."
+          }
+        }
+      },
+      "GPUUnavailableError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "gpu_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The `gpu.types` that were asked for, when there were any."
+          }
+        }
+      },
+      "ValidationFailedError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "validation_failed"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "description": "Every problem found, not just the first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "example": "image.uri"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "image URI must be from an allowed registry"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CreateVolumeRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "size_gb"
+        ],
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Owning organization. **Optional**: if omitted, the server uses\nthe caller's only organization. Returns `400 no_organization`\nif the caller belongs to none, or `400 ambiguous_organization`\n(with the candidate org IDs in the message) if they belong to\nmore than one. When supplied explicitly, the caller must be a\nmember.\n"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Volume name, unique within the organization and still reserved\nafter the volume is deleted (a clash fails the volume; see the\ncreate operation).\n",
+            "example": "training-data"
+          },
+          "size_gb": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 10000,
+            "description": "Volume size in gigabytes. The minimum (100) reflects the smallest\nsize the underlying provider (Verda/DataCrunch) accepts.\n",
+            "example": 100
+          },
+          "volume_type": {
+            "type": "string",
+            "enum": [
+              "nvme",
+              "hdd"
+            ],
+            "default": "nvme",
+            "description": "Storage class. NVMe is faster; HDD is cheaper."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location to create the volume in. A session can only mount a\nvolume in its own location, so set this when the volume is for a\nsession. Omit it to accept the provider's default. A location\nknown not to offer volumes is rejected with `400 invalid_location`,\nnaming the locations that do.\n",
+            "example": "FIN-01"
+          }
+        }
+      },
+      "ExtendVolumeRequest": {
+        "type": "object",
+        "required": [
+          "new_size_gb"
+        ],
+        "properties": {
+          "new_size_gb": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 10000,
+            "description": "New size in gigabytes. Must be larger than the current size —\nshrinking is not supported.\n"
+          }
+        }
+      },
+      "VolumeMountSpec": {
+        "type": "object",
+        "required": [
+          "volume_name",
+          "mount_path"
+        ],
+        "properties": {
+          "volume_name": {
+            "type": "string",
+            "description": "Name of an existing volume in the user's organization.",
+            "example": "training-data"
+          },
+          "mount_path": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^/[A-Za-z0-9._/-]*$",
+            "description": "Absolute path inside the container where the volume is mounted.\nIt must already be in clean form (no trailing `/`, no `//`, no `.`\nor `..` segments), and may not be exactly one of `/`, `/bin`,\n`/boot`, `/dev`, `/etc`, `/lib`, `/proc`, `/root`, `/sbin`, `/sys`,\n`/usr`, `/var` or `/opt/mimiry` (paths beneath them are allowed).\n",
+            "example": "/data"
+          }
+        }
+      },
+      "VolumeResponse": {
+        "type": "object",
+        "description": "A persistent block volume. The platform is strictly state-driven:\n- `state` is what the volume IS (durable lifecycle stage).\n- `operation` is what's HAPPENING right now (transient activity).\n- `attached_to` is a property/relationship, NOT a state — an\n  attached volume is `state=provisioned, attached_to=<session_id>`.\n\nAfter deletion the record is preserved with `state: \"deleted\"` so\ndirect GETs by id still return the last-known data. List endpoints\nexclude deleted volumes.\n",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "size_gb": {
+            "type": "integer"
+          },
+          "volume_type": {
+            "type": "string",
+            "enum": [
+              "nvme",
+              "hdd"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/VolumeState"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/VolumeOperation"
+          },
+          "location": {
+            "type": "string",
+            "description": "Provider location/region."
+          },
+          "attached_to": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Session ID this volume is currently attached to, or omitted\nwhen detached. Independent of `state` — an attached volume is\nstill `state=provisioned`. On volume delete, this field drives\nan automatic detach before destruction.\n"
+          },
+          "rate_per_gb_hour": {
+            "type": "number",
+            "description": "Hourly billing rate per GB in EUR."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The user who created the volume; absent on volumes created before 2026-08-10."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last durable state-change timestamp. Bumped only on transitions\nof `state` (submitted → provisioned, provisioned → deleted, etc.)\n— NOT on `operation` changes (`resizing`, `deleting__…`),\n`attached_to` changes, billing checkpoints, or size changes. Use\nwith `?updated_after=` / `?updated_before=` on the list endpoint.\n"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the volume failed; present only when `state` is `failed`."
+          }
+        }
+      },
+      "VolumeListResponse": {
+        "type": "object",
+        "description": "Canonical list-response shape — see API-CONVENTIONS-LIST.md.\n",
+        "required": [
+          "volumes",
+          "total_count",
+          "limit",
+          "offset",
+          "unavailable"
+        ],
+        "properties": {
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeResponse"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "unavailable": {
+            "type": "integer",
+            "description": "Volumes that exist but could not be read on this request; they are\nmissing from `volumes` and from `total_count`. `0` when the page is\ncomplete.\n"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message describing what went wrong."
+          },
+          "code": {
+            "type": "string",
+            "description": "Machine-readable error code for programmatic handling."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message with additional detail."
+          }
+        },
+        "example": {
+          "error": "invalid_request",
+          "code": "VALIDATION_ERROR",
+          "message": "Email field is required"
+        }
+      }
+    }
+  }
+}

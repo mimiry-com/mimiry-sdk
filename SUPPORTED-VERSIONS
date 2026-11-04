@@ -1,0 +1,23 @@
+# The oldest language version each part of this SDK supports, and when that moves.
+#
+# This file is the ONE place these versions are decided. Everything that states a
+# minimum is checked against it:
+#   golang  the `go` directive in go.mod                  (mimiry/supported_versions_test.go)
+#   python  requires-python in the Python package          (its own test, when the package exists)
+#
+# Policy, so every switch is the same decision:
+#   golang  the older of the two supported Go releases. Go supports the two newest, and a
+#           new one ships each February and August. When Go 1.N+1 ships, the minimum
+#           becomes 1.N.0.
+#   python  the oldest CPython that is not end-of-life. A version reaches end-of-life each
+#           October, five years after its release.
+#
+# To switch: set `minimum` to what `next` was, set `next` and `switch-by` to the following
+# step, and update what the header names, in one commit.
+#
+# What this is NOT: the toolchain the SDK is built and released with. That follows the
+# platform's pinned toolchain; a minimum only says what a user of the library needs.
+#
+# language  minimum  next    switch-by
+golang      1.26.0   1.27.0  2027-03-01
+python      3.11     3.12    2027-11-01
