@@ -3,7 +3,7 @@
 Each release of the Go library and the `mimiry` command. Versions follow semver; before v1.0.0, a
 minor release may change the Go functions, and says so here.
 
-## Unreleased
+## v0.5.0
 
 For platform API 1.0. Talks to platforms from `0.4.0-live.1` on.
 

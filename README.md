@@ -20,7 +20,7 @@ Or with Go 1.26 or later:
 go install github.com/mimiry-com/mimiry-sdk/cmd/mimiry@latest
 ```
 
-Or download a binary for Linux or macOS (amd64 or arm64) from the
+Or download a binary for Linux or macOS 13 and later (amd64 or arm64) from the
 [releases](https://github.com/mimiry-com/mimiry-sdk/releases). Each release lists the SHA-256 of
 every file in `SHA256SUMS`. Windows is not supported yet.
 
@@ -35,6 +35,10 @@ root holds no package, so `go get` on the root adds the module without its depen
 
 `mimiry --version` says which one you have.
 
+For Python 3.11 or later, `pip install mimiry` installs the same command, and a Python module
+that calls it ([`mimiry-sdk-python`](https://github.com/mimiry-com/mimiry-sdk-python)). Its
+version is always this repo's.
+
 ## Layout
 
 | Path | What it is |
@@ -45,7 +49,6 @@ root holds no package, so `go get` on the root adds the module without its depen
 | `spec/compute.json`, `spec/org.json` | Copies of the published compute and organisation API documents, as JSON. The tests read them; they are refreshed from the platform when a document changes. |
 | `internal/apispec/` | Reads those documents for the tests. |
 | `scripts/release.sh`, `CHANGELOG.md` | Builds the release binaries for a tag and publishes them, with that version's notes from the changelog. |
-| `python/` *(planned)* | The Python package. It ships one wheel per platform with the binary bundled, and makes every call through the machine interface, so behaviour exists once. |
 
 ## Using the library
 
