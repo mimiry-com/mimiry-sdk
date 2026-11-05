@@ -22,6 +22,9 @@ For platform API 1.0. Talks to platforms from `0.4.0-live.1` on.
 **Changed:** inviting posts to `/invitations`. Money in responses arrives rounded: amounts to the
 cent, rates to 6 decimals.
 
+**Fixed:** `--json` on a list command printed Go field names (`Items`, `TotalCount`). It now prints
+the list shape `mimiry rpc` uses: `items`, `total_count`, `limit`, `offset`, `unavailable`.
+
 ## v0.1.0
 
 The first public release.

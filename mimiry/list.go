@@ -28,12 +28,14 @@ func (o ListOptions) encode(q url.Values) {
 // and before paging; Limit and Offset are the values the server applied.
 // Unavailable counts entries the server knows of but could not read on this
 // request; when it is not 0, the page is incomplete.
+//
+// As JSON it is the list shape of the API and of `mimiry rpc`.
 type Page[T any] struct {
-	Items       []T
-	TotalCount  int
-	Limit       int
-	Offset      int
-	Unavailable int
+	Items       []T `json:"items"`
+	TotalCount  int `json:"total_count"`
+	Limit       int `json:"limit"`
+	Offset      int `json:"offset"`
+	Unavailable int `json:"unavailable"`
 }
 
 // maxPageSize is the server's upper bound on limit.

@@ -442,20 +442,11 @@ func (cl *call) decodeID(v any, id *string) error {
 	return nil
 }
 
-// pageResult is a list page on the wire, the same shape as the API's own.
-type pageResult[T any] struct {
-	Items       []T `json:"items"`
-	TotalCount  int `json:"total_count"`
-	Limit       int `json:"limit"`
-	Offset      int `json:"offset"`
-	Unavailable int `json:"unavailable"`
-}
-
 func page[T any](p *mimiry.Page[T], err error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pageResult[T](*p), nil
+	return p, nil
 }
 
 // collect gathers every item of an iteration; all=true answers with every item
@@ -468,5 +459,5 @@ func collect[T any](seq func(func(T, error) bool)) (any, error) {
 		}
 		items = append(items, it)
 	}
-	return pageResult[T]{Items: items, TotalCount: len(items), Limit: len(items)}, nil
+	return &mimiry.Page[T]{Items: items, TotalCount: len(items), Limit: len(items)}, nil
 }

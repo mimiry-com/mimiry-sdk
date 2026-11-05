@@ -10,7 +10,7 @@ on it and nothing else. It never reads the human CLI's output, so that output ca
 - Every line is one JSON object.
 
 ```json
-{"v": 1, "op": "sessions.list", "params": {"state": ["running"]}, "host": "platform"}
+{"v": 2, "op": "sessions.list", "params": {"state": ["running"]}, "host": "platform"}
 ```
 
 | Field | | |
@@ -27,8 +27,8 @@ Unknown fields in the request itself are refused too.
 ## The response
 
 ```json
-{"v": 1, "ok": true, "result": { ... }}
-{"v": 1, "ok": false, "error": {"kind": "api", "status": 402, "code": "insufficient_balance", "message": "...", "details": { ... }}}
+{"v": 2, "ok": true, "result": { ... }}
+{"v": 2, "ok": false, "error": {"kind": "api", "status": 402, "code": "insufficient_balance", "message": "...", "details": { ... }}}
 ```
 
 **Exit code:**
@@ -61,8 +61,8 @@ These are written during `sessions.wait_ready`, `volumes.wait_provisioned` and
 `orgs.wait_operation` when `progress` is true:
 
 ```json
-{"v": 1, "progress": { ...the session as read... }}
-{"v": 1, "progress": null, "transient": "GET ...: HTTP 502 ..."}
+{"v": 2, "progress": { ...the session as read... }}
+{"v": 2, "progress": null, "transient": "GET ...: HTTP 502 ..."}
 ```
 
 ## Operations

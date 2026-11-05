@@ -314,3 +314,38 @@ func TestVersionNeedsNoHostOrKey(t *testing.T) {
 		t.Errorf("--json: got %+v", got)
 	}
 }
+
+// A list printed with --json has the list shape the API and `mimiry rpc` use,
+// whatever the API names its items.
+func TestListJSONShape(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		reply string
+	}{
+		{[]string{"session", "list", "--json"}, `{"sessions":[],"total_count":0,"limit":50,"offset":0,"unavailable":0}`},
+		{[]string{"org", "list", "--json"}, `{"organizations":[],"total_count":0,"limit":50,"offset":0}`},
+	} {
+		t.Run(strings.Join(tc.args[:2], " "), func(t *testing.T) {
+			f := newFakeAPI(t, tc.reply)
+			code, out, stderr := f.run(t, tc.args...)
+			if code != 0 {
+				t.Fatalf("exit %d: %s", code, stderr)
+			}
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("not JSON: %v\n%s", err, out)
+			}
+			for _, k := range []string{"items", "total_count", "limit", "offset", "unavailable"} {
+				if _, ok := got[k]; !ok {
+					t.Errorf("no %q in %s", k, out)
+				}
+			}
+			if len(got) != 5 {
+				t.Errorf("want exactly the five page keys, got %s", out)
+			}
+			if string(got["items"]) != "[]" {
+				t.Errorf("an empty list printed items as %s, want []", got["items"])
+			}
+		})
+	}
+}
