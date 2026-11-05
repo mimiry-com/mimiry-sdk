@@ -2569,20 +2569,22 @@
         "properties": {
           "max_concurrent_sessions": {
             "type": "integer",
-            "description": "The most sessions that may be live at once."
+            "description": "The most sessions that may be live at once. `0` means no limit."
           },
           "current_sessions": {
             "type": "integer",
             "description": "Sessions live now."
           },
           "max_gpu_hours_daily": {
-            "type": "number"
+            "type": "number",
+            "description": "The most GPU hours a day. `0` means no limit."
           },
           "gpu_hours_used_today": {
             "type": "number"
           },
           "max_gpu_hours_monthly": {
-            "type": "number"
+            "type": "number",
+            "description": "The most GPU hours a month. `0` means no limit."
           },
           "gpu_hours_used_month": {
             "type": "number"
