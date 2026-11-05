@@ -296,8 +296,10 @@ type AvailabilityOptions struct {
 	FormFactors []string `json:"form_factor,omitempty"`
 	MinVRAMGB   int      `json:"min_vram_gb,omitzero"`
 	MinGPUCount int      `json:"min_gpu_count,omitzero"`
-	Location    string   `json:"location,omitempty"`
-	Provider    string   `json:"provider,omitempty"`
+	// Location is a location code, such as "FI-1".
+	Location string `json:"location,omitempty"`
+	// Deprecated: refused by the platform with a 400. Filter by Location.
+	Provider string `json:"provider,omitempty"`
 	// MinHourlyRate and MaxHourlyRate bound the price, EUR per hour, inclusive.
 	MinHourlyRate *float64 `json:"min_hourly_rate,omitempty"`
 	MaxHourlyRate *float64 `json:"max_hourly_rate,omitempty"`

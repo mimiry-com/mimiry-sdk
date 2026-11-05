@@ -49,7 +49,8 @@ func newFakeAPI(t *testing.T, reply string) *fakeAPI {
 			io.WriteString(w, `{"access_token":"tok","expires_in":300,"user_id":"u-1"}`)
 			return
 		}
-		if r.Header.Get("Authorization") != "Bearer tok" {
+		// /availability is public on the server, so the CLI sends no token.
+		if r.Header.Get("Authorization") != "Bearer tok" && r.URL.Path != "/api/compute/v1/availability" {
 			w.WriteHeader(401)
 			return
 		}
@@ -107,7 +108,7 @@ const accepted = `{"id":"s-1","status":"submitted","message":"Session submitted"
 func TestSessionCreateBody(t *testing.T) {
 	f := newFakeAPI(t, accepted)
 	code, out, stderr := f.run(t, "session", "create", "img:1",
-		"--name", "train", "--gpu", "A100,H100", "--vram", "80", "--max-rate", "2.5", "--location", "FIN-01",
+		"--name", "train", "--gpu", "A100,H100", "--vram", "80", "--max-rate", "2.5", "--location", "FI-1",
 		"--min-memory", "64", "--command", "python train.py",
 		"--env", "A=1", "--env", "B=x=y", "--volume", "data:/mnt/data", "--org", "o-1",
 		"--auto-terminate", "on_success", "--max-duration", "2h")
@@ -120,7 +121,7 @@ func TestSessionCreateBody(t *testing.T) {
 	}
 	got, _ := json.Marshal(r.Body)
 	want := `{"auto_terminate":{"mode":"on_success","timeout_seconds":7200},"command":"python train.py",` +
-		`"environment_vars":{"A":"1","B":"x=y"},"gpu":{"location":"FIN-01","max_hourly_rate":2.5,` +
+		`"environment_vars":{"A":"1","B":"x=y"},"gpu":{"location":"FI-1","max_hourly_rate":2.5,` +
 		`"min_memory_gb":64,"types":["A100","H100"],"vram_gb":[80]},"image":{"uri":"img:1"},"name":"train",` +
 		`"org_id":"o-1","ssh_public_key":"` + f.pub + `","volume_mounts":[{"mount_path":"/mnt/data","volume_name":"data"}]}`
 	if string(got) != want {
@@ -230,8 +231,8 @@ func TestVolumeCommands(t *testing.T) {
 		method, path string
 		body         string
 	}{
-		{[]string{"volume", "create", "--name", "data", "--size", "100", "--type", "hdd", "--location", "FIN-01", "--org", "o-1"},
-			"POST", "/api/compute/v1/volumes", `{"location":"FIN-01","name":"data","org_id":"o-1","size_gb":100,"volume_type":"hdd"}`},
+		{[]string{"volume", "create", "--name", "data", "--size", "100", "--type", "hdd", "--location", "FI-1", "--org", "o-1"},
+			"POST", "/api/compute/v1/volumes", `{"location":"FI-1","name":"data","org_id":"o-1","size_gb":100,"volume_type":"hdd"}`},
 		{[]string{"volume", "create", "--name", "data", "--size", "100"},
 			"POST", "/api/compute/v1/volumes", `{"name":"data","size_gb":100}`},
 		{[]string{"volume", "extend", "v-1", "--size", "200"},
@@ -347,5 +348,27 @@ func TestListJSONShape(t *testing.T) {
 				t.Errorf("an empty list printed items as %s, want []", got["items"])
 			}
 		})
+	}
+}
+
+// With --all, a row with no stock says so in its own column; before, only an
+// empty LOCATIONS cell told it apart (owner, 2026-11-05).
+func TestAvailabilityShowsStock(t *testing.T) {
+	f := newFakeAPI(t, `{"gpu_models":[{"name":"L40S_48G_PCIe","vram_gb":48,"skus":[
+		{"sku":"L40S_48G_PCIe_1X_16V_96M","architecture":"ADA","gpu_count":1,"vcpus":16,"memory_gb":96,"available":true,"from_hourly_rate":1.94,"currency":"EUR","listings":[{"location":"FI-2","hourly_rate":1.94,"available":true}]},
+		{"sku":"L40S_48G_PCIe_1X_32V_192M","architecture":"ADA","gpu_count":1,"vcpus":32,"memory_gb":192,"available":false,"from_hourly_rate":2.40,"currency":"EUR","listings":[{"hourly_rate":2.40,"available":false}]}]}]}`)
+	code, out, errOut := f.run(t, "availability", "--all")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[0], "STOCK") {
+		t.Fatalf("want a header with STOCK and two rows:\n%s", out)
+	}
+	if f := strings.Fields(lines[1]); !strings.Contains(lines[1], "1X_16V") || f[len(f)-2] != "yes" || f[len(f)-1] != "FI-2" {
+		t.Errorf("the in-stock row does not read yes, FI-2: %q", lines[1])
+	}
+	if f := strings.Fields(lines[2]); !strings.Contains(lines[2], "1X_32V") || f[len(f)-1] != "none" {
+		t.Errorf("the out-of-stock row does not read none: %q", lines[2])
 	}
 }

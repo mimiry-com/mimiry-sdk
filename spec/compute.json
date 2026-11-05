@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Mimiry Compute API",
-    "version": "1.0",
+    "version": "1.1",
     "description": "GPU compute session management and billing API for the Mimiry platform.\nLaunch GPU-powered compute sessions, manage SSH access, and track billing.\n\n## Authentication\n\nMost endpoints require a JWT Bearer token obtained via SSH signature exchange\n(`POST /api/auth/v1/token`) or portal login. The **GPU Availability** and\n**GPU Catalog** endpoints are public and require no authentication.\n\n## Sessions\n\nSessions have two dimensions:\n\n- **`state`** (where the session is): `submitted` → `provisioned` →\n  `booting` → `setting_up` → `pulling_image` → `running`. A session whose\n  container has exited is `exited` (the outcome is in `exit_code`); one\n  whose workload is over while its machine is kept is `idle`. Ending\n  passes through `terminating` to `terminated`. A step that fails stops\n  in `provision_failed`, `boot_failed`, `setup_failed`, `pull_failed` or\n  `start_failed`. Every state except `terminated` and `provision_failed`\n  has a machine behind it and is billed. Only a live session can be\n  terminated: `submitted`, `provisioned`, `booting`, `boot_failed`,\n  `setting_up`, `setup_failed`, `pulling_image`, `pull_failed`,\n  `start_failed`, `running` and `idle`. Terminating any other answers\n  `400 invalid_state`.\n- **`operation`** (what is happening now): `provisioning`,\n  `starting__setting_up`, `starting__pulling_image`,\n  `starting__starting_container`, `stopping__stopping_container`,\n  `terminating`. Absent when nothing is in progress.\n\nSSH access is enabled by default. While a session is `running`, its SSH\nconnection details are included in the response.\n\n## Billing\n\nSessions are billed per-GPU-hour from the authenticated user's credit\nbalance. All prices are in **EUR**. Check your balance before launching\nsessions. Credits are added to your account by Mimiry.\n\nMoney is sent as JSON numbers, rounded where it leaves the platform:\namounts (balances, transactions, required funds) to the cent, and rates\n(`hourly_rate`, `from_hourly_rate`, `rate_per_gb_hour`) to 6 decimal\nplaces. Do arithmetic on them in decimal, not binary floating point.\n\n## Async Operations\n\nCreating or terminating a session, and creating, extending or deleting a\nvolume, return `202 Accepted` with an absolute `status_url`. Poll it for\nthe outcome.\n\n## Errors\n\nAn error body is `{\"error\": \"<code>\", \"message\": \"<text>\"}`. The code is\nlower-case and stable (`unauthorized`, `not_found`, `validation_failed`,\n…); the message is for people and may change. Some errors add fields:\n`validation_failed` lists `errors[]` of `{field, message}`, and\n`insufficient_balance` and `quota_exceeded` carry their figures.\n\nA `404` with a JSON body means the resource was not found. A path or method\nthat does not exist answers `404` with the plain-text body\n`404 page not found` once you are signed in, and `401` before.\n",
     "contact": {
       "name": "Mimiry Platform",
@@ -51,7 +51,7 @@
       "get": {
         "operationId": "getCatalog",
         "summary": "List GPU models",
-        "description": "Returns the GPU catalog — technical specifications for all known GPU\nmodels. Includes both statically-configured models and dynamically-\ndiscovered models from cloud providers.\n\n**No authentication required.**\n\n### Example\n\n```bash\ncurl \"https://api.example.com/api/compute/v1/catalog\"\n```\n",
+        "description": "Returns the GPU catalog — technical specifications for all known GPU\nmodels.\n\n**No authentication required.**\n\n### Example\n\n```bash\ncurl \"https://api.example.com/api/compute/v1/catalog\"\n```\n",
         "tags": [
           "Catalog"
         ],
@@ -100,7 +100,7 @@
       "get": {
         "operationId": "checkAvailability",
         "summary": "Check GPU availability",
-        "description": "Returns availability, pricing, and provider information for GPU models\nacross all configured cloud providers.\n\n**No authentication required.** This endpoint is public and returns\nno user-specific data. Offerings are refreshed by the platform on its\nown schedule; a request never triggers a provider query.\n\n### Filters\n\nA filter sent with no value (`?min_hourly_rate=`, `?location=`) is\nrejected with **400** naming the parameter. Leave a filter out to apply\nno filter.\n\n### Pricing\n\nAll prices are in **EUR** and include the platform margin. The\n`providers` array on each GPU model shows per-provider rates and\nlocations, sorted by `hourly_rate` ascending.\n\n🚨 **The cheapest entry is not always purchasable.** A provider's rate\ncomes from our price catalogue and its `locations` from live stock, which\nmove on different cycles — so `providers[0]` can carry a real price with\n`available: false` and no matching listing under `skus[]`. To find the\ncheapest GPU you can actually start now, filter on\n`providers[].available` first, or read `skus[].listings[]`. With the\ndefault `available_only=true` it holds only purchasable listings; with\n`available_only=false` it also holds listings with `available: false`.\n\n### Use cases\n- Pre-flight check before creating a session\n- Status dashboard showing which GPU types are available\n- CLI tooling to select the best GPU type\n- Price comparison across providers\n\n### Examples\n\n```bash\n# All available GPUs (summary)\ncurl \"https://api.example.com/api/compute/v1/availability\"\n\n# Filter by family, include unavailable, full details\ncurl \"https://api.example.com/api/compute/v1/availability?gpu_family=H100&available_only=false&detail=full\"\n\n# Minimum VRAM filter\ncurl \"https://api.example.com/api/compute/v1/availability?min_vram_gb=40\"\n```\n",
+        "description": "Returns availability, pricing and locations for GPU models.\n\n**No authentication required.** This endpoint is public and returns\nno user-specific data. Offerings are refreshed by the platform on its\nown schedule; a request never triggers a fresh lookup.\n\n### Filters\n\nA filter sent with no value (`?min_hourly_rate=`, `?location=`) is\nrejected with **400** naming the parameter. Leave a filter out to apply\nno filter.\n\n### Pricing\n\nAll prices are in **EUR** and include the platform margin. The\n`providers` array on each GPU model holds one pricing summary: the\nmodel's cheapest rate and the locations where it is in stock.\n\nFor the price of a specific machine shape, read `skus[].listings[]`.\nWith the default `available_only=true` it holds only purchasable\nlistings; with `available_only=false` it also holds listings with\n`available: false`.\n\n### Locations\n\nA location is our location code: the country (ISO 3166-1 alpha-2) and a\nnumber, such as `FI-1`. A code always means the same place. Use it in\nthe `location` filter, in `gpu.location` when creating a session, and in\n`location` when creating a volume.\n\n### Use cases\n- Pre-flight check before creating a session\n- Status dashboard showing which GPU types are available\n- CLI tooling to select the best GPU type\n\n### Examples\n\n```bash\n# All available GPUs (summary)\ncurl \"https://api.example.com/api/compute/v1/availability\"\n\n# Filter by family, include unavailable, full details\ncurl \"https://api.example.com/api/compute/v1/availability?gpu_family=H100&available_only=false&detail=full\"\n\n# Minimum VRAM filter\ncurl \"https://api.example.com/api/compute/v1/availability?min_vram_gb=40\"\n```\n",
         "tags": [
           "Availability"
         ],
@@ -110,11 +110,11 @@
             "name": "provider",
             "in": "query",
             "required": false,
+            "deprecated": true,
             "schema": {
               "type": "string"
             },
-            "description": "Filter by compute provider name (e.g. `verda`). Only returns GPU\nmodels offered by this provider.\n",
-            "example": "verda"
+            "description": "Not accepted: the platform does not name the companies it buys\ncapacity from. Sending it is refused with **400**. Filter by\n`location` instead.\n"
           },
           {
             "name": "gpu_family",
@@ -188,8 +188,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by location (e.g. `FIN-01`).",
-            "example": "FIN-01"
+            "description": "Only offerings at this location code (e.g. `FI-1`). Any other value is\nrefused with **400** `invalid_location`, naming the codes.\n",
+            "example": "FI-1"
           },
           {
             "name": "available_only",
@@ -258,7 +258,7 @@
                               "currency": "EUR",
                               "listings": [
                                 {
-                                  "location": "FIN-01",
+                                  "location": "FI-1",
                                   "hourly_rate": 2.1,
                                   "available": true
                                 }
@@ -267,14 +267,9 @@
                           ],
                           "providers": [
                             {
-                              "hourly_rate": 1.98,
-                              "locations": [],
-                              "available": false
-                            },
-                            {
                               "hourly_rate": 2.1,
                               "locations": [
-                                "FIN-01"
+                                "FI-1"
                               ],
                               "available": true
                             }
@@ -291,7 +286,7 @@
                             {
                               "hourly_rate": 0.32,
                               "locations": [
-                                "FIN-01"
+                                "FI-2"
                               ],
                               "available": true
                             }
@@ -499,7 +494,7 @@
                     "summary": "No machine available",
                     "value": {
                       "error": "gpu_unavailable",
-                      "message": "No machine matches type H100_80G_SXM. Run 'mirc session availability' to see what is available.",
+                      "message": "No machine matches type H100_80G_SXM. Run 'mimiry availability' to see what is available.",
                       "gpu_types": [
                         "H100_80G_SXM"
                       ]
@@ -1846,7 +1841,7 @@
           },
           "available": {
             "type": "boolean",
-            "description": "Whether the GPU is currently available from at least one provider."
+            "description": "Whether the GPU is currently available at one location or more."
           },
           "currency": {
             "type": "string",
@@ -1857,7 +1852,7 @@
           },
           "providers": {
             "type": "array",
-            "description": "Per-provider pricing, sorted by hourly_rate ascending. An entry with\n`available: false` is a price we are not currently able to serve —\nsee ProviderPrice.available.\n",
+            "description": "The model's pricing summary: one entry, with the cheapest rate and\nevery location in stock. An entry with `available: false` is a price\nwe cannot serve at this moment — see ProviderPrice.available.\n",
             "items": {
               "$ref": "#/components/schemas/ProviderPrice"
             }
@@ -1947,14 +1942,18 @@
         "properties": {
           "provider": {
             "type": "string",
-            "description": "Absent unless the platform exposes provider names (see ProviderPrice.provider)."
+            "deprecated": true,
+            "description": "Not sent."
           },
           "location": {
             "type": "string",
-            "example": "FIN-01"
+            "description": "The location code (see /availability, Locations).",
+            "example": "FI-1"
           },
           "instance_type": {
-            "type": "string"
+            "type": "string",
+            "deprecated": true,
+            "description": "Not sent. The machine is identified by its SKU."
           },
           "hourly_rate": {
             "type": "number"
@@ -1966,30 +1965,31 @@
       },
       "ProviderPrice": {
         "type": "object",
+        "description": "The model's pricing summary.",
         "properties": {
           "provider": {
             "type": "string",
-            "description": "Provider name.\n\n🚨 **Withheld by default since 2026-09-29 — the field is ABSENT, not\nempty.** Absence asserts nothing; an empty string would assert that the\nname IS empty. Read it with a presence check, never as a string. Naming\nthe vendor behind an offering is a commercial decision, currently\n\"no\": it can build trust and it can also send a customer straight to\nthe vendor. Controlled at runtime\n(`compute_expose_provider_names`), so it may be populated on some\ndeployments and empty on others. Do not build a filter that requires\nit without first checking that a non-empty value came back — an empty\nname matches nothing and reads as \"no results\".\n\nEverything else in the entry stays true when the name is withheld:\nthe number of providers, their rates, locations and availability.\n",
-            "example": "verda"
+            "deprecated": true,
+            "description": "Not sent."
           },
           "hourly_rate": {
             "type": "number",
-            "description": "Our price in EUR for this provider.",
+            "description": "The model's cheapest rate in EUR, among locations in stock when there are any.",
             "example": 2.1
           },
           "locations": {
             "type": "array",
-            "description": "Locations where this provider **currently has stock**. Empty when\n`available` is false.\n",
+            "description": "Location codes where the model **currently has stock**. Empty when\n`available` is false.\n",
             "items": {
               "type": "string"
             },
             "example": [
-              "FIN-01"
+              "FI-1"
             ]
           },
           "available": {
             "type": "boolean",
-            "description": "Whether this provider can serve this GPU **right now**. Not the same\nquestion as the model's `available`, which is true if ANY provider\nhas stock.\n\nA provider can be listed with a rate and `available: false`: the rate\ncomes from our price catalogue, which is refreshed on a slower cycle\nthan stock. So this entry means \"we sell this, not at this moment\" —\nit is a real price, and not one you can buy today.\n\nSince 2026-09-29. Absent from older responses; treat a missing field\nas unknown rather than as false.\n",
+            "description": "Whether this GPU can be started **right now**.\n\nAn entry can carry a rate and `available: false`: the rate comes from\nour price catalogue, which is refreshed on a slower cycle than stock.\nSo it means \"we sell this, not at this moment\" — a real price, and\nnot one you can buy today.\n\nSince 2026-09-29. Absent from older responses; treat a missing field\nas unknown rather than as false.\n",
             "example": true
           }
         }
@@ -2160,13 +2160,13 @@
               },
               "provider": {
                 "type": "string",
-                "description": "Preferred compute provider (hint, not guaranteed). Falls back to best available if this provider doesn't offer the requested GPU. See /availability endpoint for provider names.",
-                "example": "verda"
+                "deprecated": true,
+                "description": "Not accepted: the platform does not name the companies it buys capacity from. Sending it is refused with 400. Choose a `location` instead."
               },
               "location": {
                 "type": "string",
-                "description": "Preferred location/region (hint, not guaranteed). Falls back to any available location. See /availability endpoint for location values.",
-                "example": "FIN-01"
+                "description": "The location code to run in (see /availability, Locations). Any other value is refused with 400 `invalid_location`. A session that mounts volumes runs where they are.",
+                "example": "FI-1"
               },
               "min_memory_gb": {
                 "type": "integer",
@@ -2373,7 +2373,7 @@
               "vendor_instance_gone",
               "system_error"
             ],
-            "description": "Why the session was halted by an external force before it finished. Absent when the workload finished by itself — a session that ran to completion, or whose container exited on its own, is not \"stopped\" and carries no stop reason. `vendor_instance_gone` means the provider no longer had the machine and the platform released the session; `system_error` means the platform stopped it after a failure on our side.\n"
+            "description": "Why the session was halted by an external force before it finished. Absent when the workload finished by itself — a session that ran to completion, or whose container exited on its own, is not \"stopped\" and carries no stop reason. `vendor_instance_gone` means the machine was gone and the platform released the session; `system_error` means the platform stopped it after a failure on our side.\n"
           },
           "error": {
             "type": "string",
@@ -2407,7 +2407,7 @@
           },
           "billing": {
             "type": "object",
-            "description": "What this session costs. Every phase is billed: provisioning, boot,\nimage pull and running. The machine is held for you, and paid for,\nfrom the moment the provider creates it, so billing starts at\n`billed_from`, not at `started_at` (the container start). A session\nthat never got a machine is not billed. A minimum charge per session\nmay apply, so `final_cost` can exceed `duration_seconds` ×\n`hourly_rate`.\n",
+            "description": "What this session costs. Every phase is billed: provisioning, boot,\nimage pull and running. The machine is held for you, and paid for,\nfrom the moment it is created, so billing starts at\n`billed_from`, not at `started_at` (the container start). A session\nthat never got a machine is not billed. A minimum charge per session\nmay apply, so `final_cost` can exceed `duration_seconds` ×\n`hourly_rate`.\n",
             "properties": {
               "hourly_rate": {
                 "type": "number",
@@ -2419,12 +2419,13 @@
               },
               "provider": {
                 "type": "string",
-                "description": "Absent unless the platform exposes provider names (see ProviderPrice.provider)."
+                "deprecated": true,
+                "description": "Not sent."
               },
               "billed_from": {
                 "type": "string",
                 "format": "date-time",
-                "description": "When billing started: the moment the provider created the\nmachine. Absent until a machine exists, and on sessions\nrecorded before 2026-10-27.\n"
+                "description": "When billing started: the moment the machine was created. Absent until a machine exists, and on sessions\nrecorded before 2026-10-27.\n"
               },
               "running_cost": {
                 "type": "number",
@@ -2907,7 +2908,7 @@
             "type": "integer",
             "minimum": 100,
             "maximum": 10000,
-            "description": "Volume size in gigabytes. The minimum (100) reflects the smallest\nsize the underlying provider (Verda/DataCrunch) accepts.\n",
+            "description": "Volume size in gigabytes, from 100.\n",
             "example": 100
           },
           "volume_type": {
@@ -2921,8 +2922,8 @@
           },
           "location": {
             "type": "string",
-            "description": "Location to create the volume in. A session can only mount a\nvolume in its own location, so set this when the volume is for a\nsession. Omit it to accept the provider's default. A location\nknown not to offer volumes is rejected with `400 invalid_location`,\nnaming the locations that do.\n",
-            "example": "FIN-01"
+            "description": "The location code to create the volume at (see /availability,\nLocations). A session can only mount a volume at its own location,\nso set this when the volume is for a session. Omit it to accept the\ndefault. A code that is not ours, or a location that does not offer\nvolumes, is refused with `400 invalid_location`, naming the codes that\ndo.\n",
+            "example": "FI-1"
           }
         }
       },
@@ -2994,7 +2995,7 @@
           },
           "location": {
             "type": "string",
-            "description": "Provider location/region."
+            "description": "The location code (see /availability, Locations)."
           },
           "attached_to": {
             "type": "string",

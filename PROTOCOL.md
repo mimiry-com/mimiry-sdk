@@ -104,7 +104,7 @@ ends the operation `failed`. `orgs.wait_operation` follows it to the outcome.
 | `volumes.extend` | `id`, `size_gb` | `{id, status, ...}` |
 | `volumes.wait_provisioned` | `id`, `interval_seconds`, `not_found_grace_seconds` | The provisioned volume; on failure, kind `failed`. |
 | `gpus.catalog` | | Every GPU model. Needs no key. |
-| `gpus.availability` | `gpu_family`, `form_factor`, `min_vram_gb`, `min_gpu_count`, `location`, `provider`, `min_hourly_rate`, `max_hourly_rate`, `include_unavailable`, `full`, `include_cpu` | GPU models with prices and stock. Needs no key. |
+| `gpus.availability` | `gpu_family`, `form_factor`, `min_vram_gb`, `min_gpu_count`, `location` (a location code, such as `FI-1`), `min_hourly_rate`, `max_hourly_rate`, `include_unavailable`, `full`, `include_cpu` | GPU models with prices and stock. Needs no key. `provider` is still read, and the platform refuses it. |
 | `account.balance` | | The caller's billing account. |
 | `account.org_balance` | `id_or_slug` | An organisation's balance. Elevated. |
 | `account.transactions` | `created_after`, `created_before`, `type`, `resource_id`, `limit`, `offset`, `all` | A page of transactions. |

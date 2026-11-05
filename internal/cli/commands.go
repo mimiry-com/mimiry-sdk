@@ -347,7 +347,7 @@ func availabilityFlags(fs *flag.FlagSet) {
 	fs.String("family", "", "comma-separated GPU families")
 	fs.Int("min-vram", 0, "minimum GPU memory, GB")
 	fs.Int("min-gpus", 0, "minimum GPUs per machine")
-	fs.String("location", "", "location")
+	fs.String("location", "", "a location code, such as FI-1")
 	fs.Float64("max-rate", 0, "maximum price, EUR per hour")
 	fs.Float64("min-rate", 0, "minimum price, EUR per hour")
 	fs.Bool("all", false, "include models with no stock")
@@ -379,17 +379,28 @@ func runAvailability(e *env, fs *flag.FlagSet, _ []string) error {
 		return e.printJSON(models)
 	}
 	w := table(e.stdout)
-	fmt.Fprintln(w, "MODEL\tVRAM\tFROM\tSKU\tARCH\tGPUS\tVCPUS\tRAM\tLOCATIONS")
+	fmt.Fprintln(w, "MODEL\tVRAM\tFROM\tSKU\tARCH\tGPUS\tVCPUS\tRAM\tSTOCK\tLOCATIONS")
 	for _, m := range models {
 		for _, s := range m.SKUs {
 			if !s.Available && !o.IncludeUnavailable {
 				continue
 			}
-			fmt.Fprintf(w, "%s\t%d GB\t%.4f %s/h\t%s\t%s\t%d\t%d\t%d GB\t%s\n", m.Name, m.VRAMGB, s.FromHourlyRate,
-				s.Currency, s.SKU, s.Architecture, s.GPUCount, s.VCPUs, s.MemoryGB, strings.Join(listingLocations(s), ","))
+			fmt.Fprintf(w, "%s\t%d GB\t%.4f %s/h\t%s\t%s\t%d\t%d\t%d GB\t%s\t%s\n", m.Name, m.VRAMGB, s.FromHourlyRate,
+				s.Currency, s.SKU, s.Architecture, s.GPUCount, s.VCPUs, s.MemoryGB, stockText(s.Available),
+				strings.Join(listingLocations(s), ","))
 		}
 	}
 	return w.Flush()
+}
+
+// stockText says whether a SKU can be bought now. With --all an out-of-stock
+// row otherwise looked like any other, and only an empty LOCATIONS cell told
+// them apart (owner, 2026-11-05).
+func stockText(available bool) string {
+	if available {
+		return "yes"
+	}
+	return "none"
 }
 
 func listingLocations(s mimiry.SKU) []string {

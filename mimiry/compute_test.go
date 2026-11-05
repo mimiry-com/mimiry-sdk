@@ -177,7 +177,7 @@ func TestAvailabilityDefaultsSendNothing(t *testing.T) {
 		if r.URL.RawQuery != "" {
 			t.Errorf("query %q, want none", r.URL.RawQuery)
 		}
-		io.WriteString(w, `{"gpu_models":[{"name":"H100_80G_SXM","providers":[{"hourly_rate":2.1,"locations":["FIN-01"],"available":true}],"skus":[{"sku":"H100-HOPPER-1x","architecture":"HOPPER","listings":[{"hourly_rate":2.1,"available":true}]}]}]}`)
+		io.WriteString(w, `{"gpu_models":[{"name":"H100_80G_SXM","providers":[{"hourly_rate":2.1,"locations":["FI-1"],"available":true}],"skus":[{"sku":"H100-HOPPER-1x","architecture":"HOPPER","listings":[{"hourly_rate":2.1,"available":true}]}]}]}`)
 	})
 	got, err := c.GPUs().Availability(context.Background(), AvailabilityOptions{})
 	if err != nil {

@@ -68,12 +68,12 @@ type SSHInfo struct {
 	Username string `json:"username"`
 }
 
-// SessionBilling is what a session costs. Billing starts when the provider
-// creates the machine (BilledFrom), not when the container starts.
+// SessionBilling is what a session costs. Billing starts when the machine is
+// created (BilledFrom), not when the container starts.
 type SessionBilling struct {
 	HourlyRate float64 `json:"hourly_rate"`
 	Currency   string  `json:"currency"`
-	// Provider is absent unless the platform exposes provider names.
+	// Deprecated: not sent.
 	Provider   *string    `json:"provider,omitempty"`
 	BilledFrom *time.Time `json:"billed_from,omitempty"`
 	// RunningCost and DurationSeconds are the cost and time so far while the
@@ -158,7 +158,9 @@ type GPUSpec struct {
 	MinHourlyRate *float64 `json:"min_hourly_rate,omitempty"`
 	MaxHourlyRate *float64 `json:"max_hourly_rate,omitempty"`
 
+	// Deprecated: refused by the platform with a 400. Choose a Location.
 	Provider *string `json:"provider,omitempty"`
+	// Location is a location code, such as "FI-1" (see GPUs().Availability).
 	Location *string `json:"location,omitempty"`
 	// Priority orders the candidates: PRICE, GPU, FAMILY, FORM_FACTOR, VRAM, ARCH.
 	Priority    []string `json:"priority,omitempty"`
@@ -205,19 +207,20 @@ const (
 // Volume is a persistent block volume. Attachment is a relationship, not a
 // state: an attached volume is provisioned with AttachedTo set.
 type Volume struct {
-	ID            string      `json:"id"`
-	Name          string      `json:"name"`
-	OrgID         string      `json:"org_id"`
-	SizeGB        int         `json:"size_gb"`
-	VolumeType    string      `json:"volume_type"`
-	State         VolumeState `json:"state"`
-	Operation     string      `json:"operation,omitempty"`
-	Location      string      `json:"location,omitempty"`
-	AttachedTo    string      `json:"attached_to,omitempty"`
-	RatePerGBHour float64     `json:"rate_per_gb_hour"`
-	CreatedBy     string      `json:"created_by,omitempty"`
-	CreatedAt     time.Time   `json:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"`
+	ID         string      `json:"id"`
+	Name       string      `json:"name"`
+	OrgID      string      `json:"org_id"`
+	SizeGB     int         `json:"size_gb"`
+	VolumeType string      `json:"volume_type"`
+	State      VolumeState `json:"state"`
+	Operation  string      `json:"operation,omitempty"`
+	// Location is the volume's location code, such as "FI-1".
+	Location      string    `json:"location,omitempty"`
+	AttachedTo    string    `json:"attached_to,omitempty"`
+	RatePerGBHour float64   `json:"rate_per_gb_hour"`
+	CreatedBy     string    `json:"created_by,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 	// Reason explains State failed.
 	Reason string `json:"reason,omitempty"`
 }
@@ -230,7 +233,8 @@ type CreateVolumeRequest struct {
 	SizeGB int    `json:"size_gb"`
 	// VolumeType is "nvme" (the default) or "hdd".
 	VolumeType string `json:"volume_type,omitempty"`
-	// Location should match the session that will mount the volume.
+	// Location is a location code, such as "FI-1". A session can mount the
+	// volume only at the same location.
 	Location string `json:"location,omitempty"`
 }
 
@@ -263,10 +267,11 @@ type GPUModel struct {
 	Configurations []Configuration `json:"configurations,omitempty"`   // full
 }
 
-// ProviderPrice is one provider's price for a model. Available false is a
-// real price that cannot be bought at this moment.
+// ProviderPrice is a model's pricing summary: its cheapest rate and the
+// location codes where it is in stock. Available false is a real price that
+// cannot be bought at this moment.
 type ProviderPrice struct {
-	// Provider is absent unless the platform exposes provider names.
+	// Deprecated: not sent.
 	Provider   *string  `json:"provider,omitempty"`
 	HourlyRate float64  `json:"hourly_rate"`
 	Locations  []string `json:"locations"`
@@ -290,8 +295,11 @@ type SKU struct {
 
 // Listing is where and at what price a SKU is offered.
 type Listing struct {
-	Provider     *string `json:"provider,omitempty"`
-	Location     string  `json:"location,omitempty"`
+	// Deprecated: not sent.
+	Provider *string `json:"provider,omitempty"`
+	// Location is a location code, such as "FI-1".
+	Location string `json:"location,omitempty"`
+	// Deprecated: not sent. The SKU identifies the machine.
 	InstanceType string  `json:"instance_type,omitempty"`
 	HourlyRate   float64 `json:"hourly_rate"`
 	Available    bool    `json:"available"`

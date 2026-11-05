@@ -3,6 +3,20 @@
 Each release of the Go library and the `mimiry` command. Versions follow semver; before v1.0.0, a
 minor release may change the Go functions, and says so here.
 
+## Unreleased
+
+For platform API 1.1.
+
+**Changed:**
+- **Locations are location codes:** a country and a number, such as `FI-1`. They are what
+  `mimiry availability` lists, and what `--location` takes on `availability`, `session create`
+  and `volume create`. Codes from the platform's own vocabulary are refused.
+- **`mimiry availability` has a STOCK column.** With `--all`, a row with no stock reads `none`.
+
+**Deprecated:** `Provider` on `ProviderPrice`, `Listing` and `SessionBilling`, and
+`Listing.InstanceType`, are no longer sent. `AvailabilityOptions.Provider` and `GPUSpec.Provider`
+are refused by the platform.
+
 ## v0.5.0
 
 For platform API 1.0. Talks to platforms from `0.4.0-live.1` on.
