@@ -420,7 +420,7 @@
                     "summary": "Unreadable body",
                     "value": {
                       "error": "invalid_request",
-                      "message": "Key: 'CreateSessionRequest.GPU.Count' Error:Field validation for 'Count' failed on the 'max' tag"
+                      "message": "gpu.count must be at most 8"
                     }
                   },
                   "ambiguous_organization": {
@@ -1599,7 +1599,7 @@
             },
             "example": {
               "error": "invalid_request",
-              "message": "Key: 'CreateVolumeRequest.SizeGB' Error:Field validation for 'SizeGB' failed on the 'min' tag"
+              "message": "size_gb must be at least 100"
             }
           }
         }
