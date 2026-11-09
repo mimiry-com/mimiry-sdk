@@ -74,6 +74,8 @@ class Mimiry < Formula
 
   def install
     bin.install "mimiry"
+    # Tab completion for bash, zsh and fish: runs `mimiry completion <shell>`.
+    generate_completions_from_executable(bin/"mimiry", "completion")
   end
 
   test do

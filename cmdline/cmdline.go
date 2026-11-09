@@ -8,6 +8,8 @@
 //
 // Exit codes: 0 success or help asked for; 1 the command failed; 2 the command
 // line was wrong (unknown command or flag, or a UsageError).
+//
+// Every program also has tab completion for bash, zsh and fish (completion.go).
 package cmdline
 
 import (
@@ -122,6 +124,12 @@ func (a *App) Title(c *Command) string {
 // Run executes the program with args (without the program name) and returns
 // the process exit code.
 func (a *App) Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// The shell's completion script calls this with a half-typed command line,
+	// so it is answered before any flag is parsed.
+	if len(args) > 0 && args[0] == completeCommand {
+		a.complete(stdout, args[1:])
+		return 0
+	}
 	e := &Env{Ctx: ctx, Stdin: stdin, Stdout: stdout, Stderr: stderr}
 	global := flag.NewFlagSet(a.Name, flag.ContinueOnError)
 	global.SetOutput(io.Discard)
@@ -172,6 +180,9 @@ func (a *App) Run(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		}
 	} else if c, ok := a.top[name]; ok {
 		cmd = c
+		rest = rest[1:]
+	} else if name == "completion" {
+		cmd = a.completionCmd()
 		rest = rest[1:]
 	} else {
 		fmt.Fprintf(stderr, "%s: unknown command %q\n\n", a.Name, name)
@@ -273,6 +284,11 @@ func (a *App) topHelp(w io.Writer) {
 		} else {
 			fmt.Fprintf(w, "  %-*s %s\n", width, n, a.Title(a.top[n]))
 		}
+	}
+	// Setup is apart from the commands that do the work: someone who never
+	// wants completion reads past one line.
+	if _, own := a.top["completion"]; !own {
+		fmt.Fprintf(w, "\nSetup:\n  %-*s %s\n", width, "completion", a.completionCmd().Summary)
 	}
 	fmt.Fprint(w, a.Footer)
 }

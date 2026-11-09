@@ -35,6 +35,11 @@ root holds no package, so `go get` on the root adds the module without its depen
 
 `mimiry --version` says which one you have.
 
+**Tab completion.** Homebrew sets it up for you. Otherwise load it in your shell's start-up file,
+`source <(mimiry completion bash)` in `~/.bashrc` or `source <(mimiry completion zsh)` in
+`~/.zshrc`, or save `mimiry completion fish` as `~/.config/fish/completions/mimiry.fish`. It asks
+`mimiry` itself what to offer, so it stays current when you upgrade.
+
 For Python 3.11 or later, `pip install mimiry` installs the same command, and a Python module
 that calls it ([`mimiry-sdk-python`](https://github.com/mimiry-com/mimiry-sdk-python)). Its
 version is always this repo's.

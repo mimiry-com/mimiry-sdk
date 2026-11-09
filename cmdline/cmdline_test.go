@@ -61,6 +61,8 @@ func TestHelpListsWhatExists(t *testing.T) {
 		want := "tool — a test program.\n\nCommands:\n" +
 			"  item          Items\n" +
 			"  status        Show the status\n" +
+			"\nSetup:\n" +
+			"  completion    Tab completion for bash, zsh or fish\n" +
 			"\nfooter line\n"
 		if code != 0 || out != want {
 			t.Errorf("%v: exit %d, help\n%s\nwant\n%s", args, code, out, want)

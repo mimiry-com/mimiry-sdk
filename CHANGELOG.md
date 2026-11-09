@@ -21,6 +21,9 @@ are refused by the platform.
 two words deep, standard-library flags, help, and exit codes (0 done, 1 failed, 2 wrong command
 line). Other Go programs can build on it. `mimiry`'s help and errors are unchanged.
 
+**Added:** **tab completion** for bash, zsh and fish: `mimiry completion <shell>` prints the
+script, and Homebrew installs it. It asks `mimiry` what to offer, so it never goes stale.
+
 **Fixed:** **`--` ends the flags.** An argument after it that looks like a flag is now passed as an
 argument; it was parsed as a flag.
 
