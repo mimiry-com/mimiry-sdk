@@ -5,18 +5,17 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 
 	"golang.org/x/term"
 
+	"github.com/mimiry-com/mimiry-sdk/cmdline"
 	"github.com/mimiry-com/mimiry-sdk/internal/apispec"
 	"github.com/mimiry-com/mimiry-sdk/internal/rpc"
 	"github.com/mimiry-com/mimiry-sdk/mimiry"
@@ -62,135 +61,57 @@ type group struct {
 var groups = map[string]*group{}
 var topLevel = map[string]*command{}
 
-// Run executes the CLI and returns the process exit code.
+// usage is a mistake in how a command was called (cmdline prints it with the
+// command's help and exits 2).
+type usage = cmdline.UsageError
+
+// Run executes the CLI and returns the process exit code. The framework is
+// package cmdline (RC-446); what is mimiry's own is here.
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	e := &env{ctx: ctx, stdout: stdout, stderr: stderr}
-	global := flag.NewFlagSet("mimiry", flag.ContinueOnError)
-	global.SetOutput(io.Discard)
-	global.StringVar(&e.host, "host", "", "")
-	global.StringVar(&e.key, "key", "", "")
-	global.BoolVar(&e.json, "json", false, "")
-	showVersion := global.Bool("version", false, "")
-	if err := global.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			topHelp(stdout)
-			return 0
-		}
-		fmt.Fprintf(stderr, "mimiry: %v\n\n", err)
-		topHelp(stderr)
-		return 2
+	var g env
+	app := &cmdline.App{
+		Name:   "mimiry",
+		Header: topHeader,
+		Footer: topFooter,
+		Marker: apispec.Marker,
+		Globals: func(fs *flag.FlagSet) {
+			fs.StringVar(&g.host, "host", g.host, "host: a subdomain, hostname or URL")
+			fs.StringVar(&g.key, "key", g.key, "SSH key (private key, or its .pub when in ssh-agent)")
+			fs.BoolVar(&g.json, "json", g.json, "print the API's JSON instead of a table")
+		},
+		Version:       func(ce *cmdline.Env) error { return printVersion(bind(&g, ce)) },
+		DescribeError: describeError,
 	}
-	if *showVersion {
-		if err := printVersion(e); err != nil {
-			fmt.Fprintf(stderr, "mimiry: %v\n", err)
-			return 1
-		}
-		return 0
-	}
-	rest := global.Args()
-	if len(rest) == 0 || rest[0] == "help" {
-		topHelp(stdout)
-		return 0
-	}
-
-	name := rest[0]
-	var cmd *command
-	full := name
-	if g, ok := groups[name]; ok {
-		if len(rest) < 2 || rest[1] == "help" || rest[1] == "-h" || rest[1] == "--help" {
-			groupHelp(stdout, name, g)
-			return 0
-		}
-		cmd = g.cmds[rest[1]]
-		full = name + " " + rest[1]
-		rest = rest[2:]
-		if cmd == nil {
-			fmt.Fprintf(stderr, "mimiry: unknown command %q\n\n", full)
-			groupHelp(stderr, name, g)
-			return 2
-		}
-	} else if c, ok := topLevel[name]; ok {
-		cmd = c
-		rest = rest[1:]
-	} else {
-		fmt.Fprintf(stderr, "mimiry: unknown command %q\n\n", name)
-		topHelp(stderr)
-		return 2
-	}
-
-	fs := flag.NewFlagSet("mimiry "+full, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	// Global flags are accepted after the command too: `mimiry session list --json`.
-	fs.StringVar(&e.host, "host", e.host, "host: a subdomain, hostname or URL")
-	fs.StringVar(&e.key, "key", e.key, "SSH key (private key, or its .pub when in ssh-agent)")
-	fs.BoolVar(&e.json, "json", e.json, "print the API's JSON instead of a table")
-	if cmd.flags != nil {
-		cmd.flags(fs)
-	}
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: mimiry %s [flags] %s\n\n%s\n\nFlags:\n", full, cmd.usage, cmd.title())
-		fs.PrintDefaults()
-		if cmd.help != "" {
-			fmt.Fprintln(fs.Output(), cmd.help)
+	adapt := func(c *command) *cmdline.Command {
+		return &cmdline.Command{
+			Summary:  c.summary,
+			Usage:    c.usage,
+			Help:     c.help,
+			Flags:    c.flags,
+			Elevated: c.elevated,
+			Run: func(ce *cmdline.Env, fs *flag.FlagSet, args []string) error {
+				return c.run(bind(&g, ce), fs, args)
+			},
 		}
 	}
-	if err := fs.Parse(interleave(fs, rest)); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
+	for n, c := range topLevel {
+		app.Add(n, adapt(c))
 	}
-
-	if err := cmd.run(e, fs, fs.Args()); err != nil {
-		var u usage
-		if errors.As(err, &u) {
-			fmt.Fprintf(stderr, "mimiry %s: %s\n", full, u)
-			fs.Usage()
-			return 2
+	for n, grp := range groups {
+		cmds := make(map[string]*cmdline.Command, len(grp.cmds))
+		for cn, c := range grp.cmds {
+			cmds[cn] = adapt(c)
 		}
-		fmt.Fprintf(stderr, "mimiry: %s\n", describeError(err))
-		return 1
+		app.AddGroup(n, &cmdline.Group{Summary: grp.summary, Commands: cmds})
 	}
-	return 0
+	return app.Run(ctx, args, stdin, stdout, stderr)
 }
 
-// interleave moves flags after positional arguments to the front, so
-// `mimiry session status <id> --json` works as people type it.
-func interleave(fs *flag.FlagSet, args []string) []string {
-	var flags, pos []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			pos = append(pos, args[i+1:]...)
-			break
-		}
-		if !strings.HasPrefix(a, "-") || a == "-" {
-			pos = append(pos, a)
-			continue
-		}
-		flags = append(flags, a)
-		name := strings.TrimLeft(a, "-")
-		if strings.Contains(name, "=") {
-			continue
-		}
-		f := fs.Lookup(name)
-		if f == nil {
-			continue
-		}
-		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
-			continue
-		}
-		if i+1 < len(args) {
-			flags = append(flags, args[i+1])
-			i++
-		}
-	}
-	return append(flags, pos...)
+// bind is the env a command runs with: the framework's streams and context,
+// and the global flags as parsed.
+func bind(g *env, ce *cmdline.Env) *env {
+	return &env{ctx: ce.Ctx, stdout: ce.Stdout, stderr: ce.Stderr, host: g.host, key: g.key, json: g.json}
 }
-
-type usage string
-
-func (u usage) Error() string { return string(u) }
 
 // client builds the library client, prompting for a passphrase when the key
 // needs one and there is a terminal to ask on.
@@ -227,10 +148,7 @@ func printVersion(e *env) error {
 }
 
 func (e *env) printJSON(v any) error {
-	enc := json.NewEncoder(e.stdout)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	return enc.Encode(v)
+	return (&cmdline.Env{Stdout: e.stdout}).PrintJSON(v)
 }
 
 // describeError says what went wrong and, where the cause is a known one,
@@ -251,44 +169,15 @@ func describeError(err error) string {
 	return strings.TrimPrefix(err.Error(), "mimiry: ")
 }
 
-func topHelp(w io.Writer) {
-	fmt.Fprint(w, `mimiry — the Mimiry command line.
+const topHeader = `mimiry — the Mimiry command line.
 
 Usage: mimiry [--host <host>] [--key <key>] [--json] <command> [args]
        mimiry --version
 
-`)
-	names := make([]string, 0, len(groups)+len(topLevel))
-	for n := range groups {
-		names = append(names, n)
-	}
-	for n := range topLevel {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	fmt.Fprintln(w, "Commands:")
-	for _, n := range names {
-		if g, ok := groups[n]; ok {
-			fmt.Fprintf(w, "  %-13s %s\n", n, g.summary)
-		} else {
-			fmt.Fprintf(w, "  %-13s %s\n", n, topLevel[n].title())
-		}
-	}
-	fmt.Fprint(w, `
+`
+
+const topFooter = `
 The host and key are taken from --host/--key, then MIMIRY_HOST/MIMIRY_SSH_KEY,
 then what 'mimiry auth' saved. A host is a subdomain (platform), a hostname or a URL.
 'mimiry <command> --help' describes a command.
-`)
-}
-
-func groupHelp(w io.Writer, name string, g *group) {
-	fmt.Fprintf(w, "mimiry %s — %s\n\nCommands:\n", name, g.summary)
-	names := make([]string, 0, len(g.cmds))
-	for n := range g.cmds {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		fmt.Fprintf(w, "  %-16s %s\n", n, g.cmds[n].title())
-	}
-}
+`

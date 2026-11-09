@@ -17,6 +17,13 @@ For platform API 1.1.
 `Listing.InstanceType`, are no longer sent. `AvailabilityOptions.Provider` and `GPUSpec.Provider`
 are refused by the platform.
 
+**Added:** package **`cmdline`**, the command-line framework `mimiry` is built on: commands one or
+two words deep, standard-library flags, help, and exit codes (0 done, 1 failed, 2 wrong command
+line). Other Go programs can build on it. `mimiry`'s help and errors are unchanged.
+
+**Fixed:** **`--` ends the flags.** An argument after it that looks like a flag is now passed as an
+argument; it was parsed as a flag.
+
 ## v0.5.0
 
 For platform API 1.0. Talks to platforms from `0.4.0-live.1` on.
