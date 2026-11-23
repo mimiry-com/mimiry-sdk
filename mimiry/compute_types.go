@@ -66,6 +66,10 @@ type SSHInfo struct {
 	Host     string `json:"host,omitempty"`
 	Port     int    `json:"port"`
 	Username string `json:"username"`
+	// HostKey is the session's SSH host key, public, in authorized_keys
+	// form. Check that the server presents it instead of trusting the first
+	// key you see. Empty for sessions started before it was published.
+	HostKey string `json:"host_key,omitempty"`
 }
 
 // SessionBilling is what a session costs. Billing starts when the machine is

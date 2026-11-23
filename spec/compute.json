@@ -2324,6 +2324,10 @@
               },
               "username": {
                 "type": "string"
+              },
+              "host_key": {
+                "type": "string",
+                "description": "The session's SSH host key (public, in authorized_keys form). Check that the server presents this key instead of trusting the first key you see. Absent for sessions started before it was published."
               }
             }
           },
