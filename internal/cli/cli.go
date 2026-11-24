@@ -24,6 +24,7 @@ import (
 // env is what a command runs with.
 type env struct {
 	ctx    context.Context
+	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
 	// host and key are the global --host / --key values, empty when not given.
@@ -110,7 +111,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 // bind is the env a command runs with: the framework's streams and context,
 // and the global flags as parsed.
 func bind(g *env, ce *cmdline.Env) *env {
-	return &env{ctx: ce.Ctx, stdout: ce.Stdout, stderr: ce.Stderr, host: g.host, key: g.key, json: g.json}
+	return &env{ctx: ce.Ctx, stdin: ce.Stdin, stdout: ce.Stdout, stderr: ce.Stderr, host: g.host, key: g.key, json: g.json}
 }
 
 // client builds the library client, prompting for a passphrase when the key

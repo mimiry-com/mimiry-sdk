@@ -85,6 +85,16 @@ mimiry session create nvcr.io/nvidia/pytorch:24.01-py3 \
 `--ssh-key-id` or `--ssh-public-key`, a session lets in the key you signed in with.
 
 ```
+mimiry session ssh <id>                          # a shell, through the Mimiry gateway
+mimiry session ssh <id> -- -L 8888:localhost:8888
+mimiry session ssh <id> -- nvidia-smi
+```
+
+`session ssh` runs your OpenSSH with the session's published host key pinned, so nothing is
+trusted on first use. For scp, rsync or your own ssh, `mimiry session proxy <id>` is the same
+connection as a `ProxyCommand`; `mimiry session proxy --help` shows the `~/.ssh/config` lines.
+
+```
 mimiry org create "Acme" --slug o-acme
 mimiry org invite o-acme jane@example.com
 mimiry org set-role o-acme jane@example.com admin

@@ -97,6 +97,13 @@ type UsageError string
 
 func (u UsageError) Error() string { return string(u) }
 
+// ExitCode ends the program with this code and prints nothing: the command
+// has already said what happened, or ran a program that did (`ssh`), whose
+// code it passes on.
+type ExitCode int
+
+func (c ExitCode) Error() string { return fmt.Sprintf("exit status %d", int(c)) }
+
 // Add registers a top-level command.
 func (a *App) Add(name string, c *Command) {
 	if a.top == nil {
@@ -214,6 +221,10 @@ func (a *App) Run(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	}
 
 	if err := cmd.Run(e, fs, fs.Args()); err != nil {
+		var code ExitCode
+		if errors.As(err, &code) {
+			return int(code)
+		}
 		var u UsageError
 		if errors.As(err, &u) {
 			fmt.Fprintf(stderr, "%s %s: %s\n", a.Name, full, u)

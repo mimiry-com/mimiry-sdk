@@ -42,6 +42,9 @@ func testApp(got *[]string) *App {
 				if len(args) != 1 {
 					return UsageError("remove needs one <id>")
 				}
+				if args[0] == "passed-on" {
+					return ExitCode(3)
+				}
 				return errors.New("refused")
 			}},
 	}})
@@ -150,5 +153,13 @@ func TestPrintJSONDoesNotEscapeHTML(t *testing.T) {
 	}
 	if b.String() != "{\n  \"a\": \"<b>&\"\n}\n" {
 		t.Errorf("%q", b.String())
+	}
+}
+
+func TestAnExitCodeIsPassedOnSilently(t *testing.T) {
+	var got []string
+	code, out, errOut := run(testApp(&got), "item", "remove", "passed-on")
+	if code != 3 || out != "" || errOut != "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want 3 and nothing printed", code, out, errOut)
 	}
 }

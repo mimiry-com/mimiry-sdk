@@ -871,6 +871,94 @@
         }
       }
     },
+    "/api/compute/v1/sessions/{id}/gateway-ticket": {
+      "post": {
+        "operationId": "createSessionGatewayTicket",
+        "summary": "Get a ticket to connect to a session",
+        "description": "Returns a short-lived ticket for connecting to a running session's SSH\nserver through the Mimiry gateway, and the gateway addresses to use,\nin order. Nothing connects to the session's machine directly: it\nconnects out to the gateway, and the gateway pairs the two.\n\nThe `mimiry` CLI does all of this for you: `mimiry session ssh <id>`,\nor `mimiry session proxy <id>` as an ssh `ProxyCommand`. In Go, the\nSDK's `Sessions().Connect` returns the connection.\n\nA ticket lasts 60 seconds and opens connections to this session only.\nGet a new one for each connection. SSH still decides who gets in:\ncheck that the server presents the session's `ssh.host_key`.\n\n### Example\n\n```bash\ncurl -X POST \"https://api.example.com/api/compute/v1/sessions/{id}/gateway-ticket\" \\\n  -H \"Authorization: Bearer $TOKEN\"\n```\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A ticket was issued.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayTicketResponse"
+                },
+                "example": {
+                  "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6Ijk2YzE...",
+                  "expires_at": "2026-06-01T06:42:10Z",
+                  "rendezvous": [
+                    "wss://relay-api.example.com"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The session cannot be connected to now: `session_not_running` (it\nis starting, or has ended) or `ssh_disabled` (it was started\nwithout SSH).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "session_not_running",
+                  "message": "The session is not running"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many tickets requested. Wait a minute."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "The gateway is not available on this platform.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "gateway_not_configured",
+                  "message": "The session gateway is not available"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/compute/v1/sessions/{id}/health": {
       "get": {
         "operationId": "getSessionHealth",
@@ -2768,6 +2856,32 @@
           "lines_requested": {
             "type": "integer",
             "description": "The `tail` value used for the request."
+          }
+        }
+      },
+      "GatewayTicketResponse": {
+        "type": "object",
+        "required": [
+          "ticket",
+          "expires_at",
+          "rendezvous"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "description": "Send as `Authorization: Bearer <ticket>` when opening the\nconnection. Opaque: do not parse it.\n"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the ticket stops opening new connections. Open connections are not affected."
+          },
+          "rendezvous": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gateway addresses (`wss://` URLs), in the order to try them. Use the\nfirst that connects.\n"
           }
         }
       },

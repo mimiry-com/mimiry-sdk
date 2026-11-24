@@ -33,22 +33,23 @@ const testOrgID = "550e8400-e29b-41d4-a716-446655440000"
 
 // markerCalls exercises each method once. The key is "<Service>.<Method>".
 var markerCalls = map[string]func(context.Context, *Client){
-	"SessionsService.Create":    func(ctx context.Context, c *Client) { c.Sessions().Create(ctx, CreateSessionRequest{}) },
-	"SessionsService.List":      func(ctx context.Context, c *Client) { c.Sessions().List(ctx, SessionListOptions{}) },
-	"SessionsService.All":       func(ctx context.Context, c *Client) { drain(c.Sessions().All(ctx, SessionListOptions{})) },
-	"SessionsService.Get":       func(ctx context.Context, c *Client) { c.Sessions().Get(ctx, "s-1", GetSessionOptions{}) },
-	"SessionsService.Terminate": func(ctx context.Context, c *Client) { c.Sessions().Terminate(ctx, "s-1") },
-	"SessionsService.Logs":      func(ctx context.Context, c *Client) { c.Sessions().Logs(ctx, "s-1", LogsOptions{}) },
-	"VolumesService.Create":     func(ctx context.Context, c *Client) { c.Volumes().Create(ctx, CreateVolumeRequest{}) },
-	"VolumesService.List":       func(ctx context.Context, c *Client) { c.Volumes().List(ctx, VolumeListOptions{}) },
-	"VolumesService.All":        func(ctx context.Context, c *Client) { drain(c.Volumes().All(ctx, VolumeListOptions{})) },
-	"VolumesService.Get":        func(ctx context.Context, c *Client) { c.Volumes().Get(ctx, "v-1") },
-	"VolumesService.Delete":     func(ctx context.Context, c *Client) { c.Volumes().Delete(ctx, "v-1") },
-	"VolumesService.Extend":     func(ctx context.Context, c *Client) { c.Volumes().Extend(ctx, "v-1", 200) },
-	"GPUsService.Catalog":       func(ctx context.Context, c *Client) { c.GPUs().Catalog(ctx) },
-	"GPUsService.Availability":  func(ctx context.Context, c *Client) { c.GPUs().Availability(ctx, AvailabilityOptions{}) },
-	"AccountService.Balance":    func(ctx context.Context, c *Client) { c.Account().Balance(ctx) },
-	"AccountService.OrgBalance": func(ctx context.Context, c *Client) { c.Account().OrgBalance(ctx, "o-acme") },
+	"SessionsService.Create":        func(ctx context.Context, c *Client) { c.Sessions().Create(ctx, CreateSessionRequest{}) },
+	"SessionsService.List":          func(ctx context.Context, c *Client) { c.Sessions().List(ctx, SessionListOptions{}) },
+	"SessionsService.All":           func(ctx context.Context, c *Client) { drain(c.Sessions().All(ctx, SessionListOptions{})) },
+	"SessionsService.Get":           func(ctx context.Context, c *Client) { c.Sessions().Get(ctx, "s-1", GetSessionOptions{}) },
+	"SessionsService.Terminate":     func(ctx context.Context, c *Client) { c.Sessions().Terminate(ctx, "s-1") },
+	"SessionsService.Logs":          func(ctx context.Context, c *Client) { c.Sessions().Logs(ctx, "s-1", LogsOptions{}) },
+	"SessionsService.GatewayTicket": func(ctx context.Context, c *Client) { c.Sessions().GatewayTicket(ctx, "s-1") },
+	"VolumesService.Create":         func(ctx context.Context, c *Client) { c.Volumes().Create(ctx, CreateVolumeRequest{}) },
+	"VolumesService.List":           func(ctx context.Context, c *Client) { c.Volumes().List(ctx, VolumeListOptions{}) },
+	"VolumesService.All":            func(ctx context.Context, c *Client) { drain(c.Volumes().All(ctx, VolumeListOptions{})) },
+	"VolumesService.Get":            func(ctx context.Context, c *Client) { c.Volumes().Get(ctx, "v-1") },
+	"VolumesService.Delete":         func(ctx context.Context, c *Client) { c.Volumes().Delete(ctx, "v-1") },
+	"VolumesService.Extend":         func(ctx context.Context, c *Client) { c.Volumes().Extend(ctx, "v-1", 200) },
+	"GPUsService.Catalog":           func(ctx context.Context, c *Client) { c.GPUs().Catalog(ctx) },
+	"GPUsService.Availability":      func(ctx context.Context, c *Client) { c.GPUs().Availability(ctx, AvailabilityOptions{}) },
+	"AccountService.Balance":        func(ctx context.Context, c *Client) { c.Account().Balance(ctx) },
+	"AccountService.OrgBalance":     func(ctx context.Context, c *Client) { c.Account().OrgBalance(ctx, "o-acme") },
 	"AccountService.Transactions": func(ctx context.Context, c *Client) {
 		c.Account().Transactions(ctx, TransactionListOptions{})
 	},
@@ -91,6 +92,7 @@ var markerCalls = map[string]func(context.Context, *Client){
 // read), and are held to the same marker as it.
 var markerDelegates = map[string]string{
 	"SessionsService.WaitReady":      "SessionsService.Get",
+	"SessionsService.Connect":        "SessionsService.GatewayTicket",
 	"VolumesService.WaitProvisioned": "VolumesService.Get",
 	"OrgsService.WaitOperation":      "OrgsService.Operation",
 }

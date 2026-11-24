@@ -46,6 +46,8 @@ var markerRuns = map[string][]string{
 	"session logs":      {"session", "logs", "s-1"},
 	"session terminate": {"session", "terminate", "s-1"},
 	"session wait":      {"session", "wait", "s-1", "--timeout", "300ms"},
+	"session ssh":       {"session", "ssh", "s-1"},
+	"session proxy":     {"session", "proxy", "s-1"},
 	"volume create":     {"volume", "create", "--name", "v", "--size", "100", "--location", "FI-1"},
 	"volume list":       {"volume", "list"},
 	"volume status":     {"volume", "status", "v-1"},

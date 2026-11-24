@@ -185,6 +185,7 @@ func TestTypesMatchTheDocument(t *testing.T) {
 		{reflect.TypeFor[VolumeMount](), "compute.json", "#/components/schemas/VolumeMountSpec"},
 		{reflect.TypeFor[Accepted](), "compute.json", "#/components/schemas/AcceptedResponse"},
 		{reflect.TypeFor[SessionLogs](), "compute.json", "#/components/schemas/SessionLogsResponse"},
+		{reflect.TypeFor[GatewayTicket](), "compute.json", "#/components/schemas/GatewayTicketResponse"},
 		{reflect.TypeFor[Volume](), "compute.json", "#/components/schemas/VolumeResponse"},
 		{reflect.TypeFor[CreateVolumeRequest](), "compute.json", "#/components/schemas/CreateVolumeRequest"},
 		{reflect.TypeFor[CatalogEntry](), "compute.json", "#/components/schemas/GPUCatalogEntry"},

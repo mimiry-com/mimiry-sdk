@@ -207,6 +207,9 @@ func printSession(out io.Writer, s *mimiry.Session) {
 	if s.SSH != nil && s.SSH.Host != "" {
 		row("SSH", fmt.Sprintf("ssh -p %d %s@%s", s.SSH.Port, s.SSH.Username, s.SSH.Host))
 	}
+	if s.SSH != nil && s.SSH.HostKey != "" {
+		row("Host key", hostKeyFingerprint(s.SSH.HostKey))
+	}
 	if s.ExitCode != nil {
 		row("Exit code", strconv.Itoa(*s.ExitCode))
 	}

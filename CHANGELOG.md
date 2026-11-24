@@ -5,7 +5,7 @@ minor release may change the Go functions, and says so here.
 
 ## Unreleased
 
-For platform API 1.1.
+For platform API 1.2.
 
 **Changed:**
 - **Locations are location codes:** a country and a number, such as `FI-1`. They are what
@@ -23,6 +23,17 @@ line). Other Go programs can build on it. `mimiry`'s help and errors are unchang
 
 **Added:** **tab completion** for bash, zsh and fish: `mimiry completion <shell>` prints the
 script, and Homebrew installs it. It asks `mimiry` what to offer, so it never goes stale.
+
+**Added:** **`mimiry session ssh <id>`** opens a shell on a running session through the Mimiry
+gateway, with the session's published host key pinned: ssh checks it on the first connection
+instead of trusting whatever key it is shown. Options and a command go after `--`
+(`mimiry session ssh <id> -- -L 8888:localhost:8888`, `... -- nvidia-smi`), and ssh's exit status
+is passed on. **`mimiry session proxy <id>`** is the same connection as an ssh `ProxyCommand`, for
+your own ssh, scp or rsync. `mimiry session status` shows the host key's fingerprint.
+
+**Added:** in Go, `Sessions().Connect` returns a `net.Conn` to a session's SSH server through the
+gateway (`GatewayConn`, with `CloseWrite`), and `Sessions().GatewayTicket` the ticket it uses.
+`SSHInfo.HostKey` is the key to check. `cmdline.ExitCode` ends a program with a given code.
 
 **Fixed:** **`--` ends the flags.** An argument after it that looks like a flag is now passed as an
 argument; it was parsed as a flag.
