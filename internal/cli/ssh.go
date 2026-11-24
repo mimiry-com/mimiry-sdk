@@ -189,8 +189,13 @@ func sshCommandLine(i sshInvocation) []string {
 		"-o", "CheckHostIP=no",
 		"-l", i.user,
 	}
+	// The key the CLI signed in with is the one a session lets in unless it
+	// was started with another. Only that key is offered: ssh would first
+	// try every key in the agent, and a server stops listening after a few
+	// (2026-11-24: "too many authentication failures" with a full agent).
+	// A caller who names a key with -i gets neither.
 	if i.key != "" && !hasOption(i.opts, 'i') {
-		argv = append(argv, "-i", i.key)
+		argv = append(argv, "-i", i.key, "-o", "IdentitiesOnly=yes")
 	}
 	argv = append(argv, i.opts...)
 	argv = append(argv, i.alias)

@@ -41,7 +41,7 @@ func TestTheSignInKeyIsOfferedUnlessTheCallerNamesOne(t *testing.T) {
 	want := []string{
 		"-o", "ProxyCommand=P", "-o", "HostKeyAlias=mimiry-s-1", "-o", "UserKnownHostsFile=/kh",
 		"-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no", "-o", "CheckHostIP=no",
-		"-l", "root", "-i", "/k", "mimiry-s-1",
+		"-l", "root", "-i", "/k", "-o", "IdentitiesOnly=yes", "mimiry-s-1",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %q\nwant %q", got, want)
@@ -50,7 +50,7 @@ func TestTheSignInKeyIsOfferedUnlessTheCallerNamesOne(t *testing.T) {
 	own := base
 	own.opts, own.command = []string{"-Ai", "/mine"}, []string{"uptime"}
 	got = sshCommandLine(own)
-	if slices.Contains(got, "/k") || !slices.Equal(got[len(got)-4:], []string{"-Ai", "/mine", "mimiry-s-1", "uptime"}) {
+	if slices.Contains(got, "/k") || slices.Contains(got, "IdentitiesOnly=yes") || !slices.Equal(got[len(got)-4:], []string{"-Ai", "/mine", "mimiry-s-1", "uptime"}) {
 		t.Fatalf("got %q", got)
 	}
 	// "-i" as the value of another option is not -i.
