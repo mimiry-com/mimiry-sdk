@@ -2499,7 +2499,7 @@
           },
           "billing": {
             "type": "object",
-            "description": "What this session costs. Every phase is billed: provisioning, boot,\nimage pull and running. The machine is held for you, and paid for,\nfrom the moment it is created, so billing starts at\n`billed_from`, not at `started_at` (the container start). A session\nthat never got a machine is not billed. A minimum charge per session\nmay apply, so `final_cost` can exceed `duration_seconds` ×\n`hourly_rate`.\n",
+            "description": "What this session costs. Every phase is billed: provisioning, boot,\nimage pull and running. The machine is held for you, and paid for,\nfrom the moment it is created, so billing starts at\n`billed_from`, not at `started_at` (the container start). A session\nthat never got a machine is not billed. Billing is per second, with\nno minimum: `final_cost` is `duration_seconds` / 3600 ×\n`hourly_rate`.\n",
             "properties": {
               "hourly_rate": {
                 "type": "number",
