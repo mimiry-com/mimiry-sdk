@@ -204,11 +204,15 @@ func printSession(out io.Writer, s *mimiry.Session) {
 	if s.GPUType != nil {
 		row("GPU", fmt.Sprintf("%s × %d", *s.GPUType, max(s.GPUCount, 1)))
 	}
-	if s.SSH != nil && s.SSH.Host != "" {
-		row("SSH", fmt.Sprintf("ssh -p %d %s@%s", s.SSH.Port, s.SSH.Username, s.SSH.Host))
-	}
-	if s.SSH != nil && s.SSH.HostKey != "" {
+	// A session with a published host key is reached through the Mimiry
+	// gateway, and its machine's address is not shown. One started before
+	// that keeps its direct command; sshReady points here for it.
+	switch {
+	case s.SSH != nil && s.SSH.HostKey != "":
+		row("SSH", "mimiry session ssh "+s.ID)
 		row("Host key", hostKeyFingerprint(s.SSH.HostKey))
+	case s.SSH != nil && s.SSH.Host != "":
+		row("SSH", fmt.Sprintf("ssh -p %d %s@%s", s.SSH.Port, s.SSH.Username, s.SSH.Host))
 	}
 	if s.ExitCode != nil {
 		row("Exit code", strconv.Itoa(*s.ExitCode))

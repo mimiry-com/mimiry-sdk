@@ -106,6 +106,29 @@ func TestSessionStatusShowsTheHostKeyAsSSHDoes(t *testing.T) {
 	}
 }
 
+// RC-443 step 1.7: a gateway session's status shows the gateway command and
+// never the machine's address; one from before the gateway keeps its direct
+// command, which is where sshReady sends its owner.
+func TestSessionStatusShowsTheGatewayCommandNotTheAddress(t *testing.T) {
+	s := &mimiry.Session{ID: "s-1", State: mimiry.SessionRunning, SSHEnabled: true,
+		SSH: &mimiry.SSHInfo{Host: "203.0.113.7", Port: 22, Username: "root", HostKey: newFakeAPI(t, "").pub}}
+	var out strings.Builder
+	printSession(&out, s)
+	if !strings.Contains(out.String(), "mimiry session ssh s-1") || !strings.Contains(out.String(), "SHA256:") {
+		t.Errorf("gateway session status:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "203.0.113.7") {
+		t.Errorf("gateway session status shows the machine's address:\n%s", out.String())
+	}
+
+	s.SSH.HostKey = ""
+	out.Reset()
+	printSession(&out, s)
+	if !strings.Contains(out.String(), "ssh -p 22 root@203.0.113.7") {
+		t.Errorf("pre-gateway session status lost its direct command:\n%s", out.String())
+	}
+}
+
 // TestProxyCarriesStdinAndStdout runs `session proxy` against a rendezvous
 // point that echoes what it receives, as the session's side would answer.
 func TestProxyCarriesStdinAndStdout(t *testing.T) {
@@ -137,7 +160,7 @@ func TestProxyCarriesStdinAndStdout(t *testing.T) {
 			}
 		}
 		c.Write(ctx, websocket.MessageText, fmt.Appendf(nil, "fin %d", n)) //nolint:errcheck
-		c.Read(ctx)                                                         //nolint:errcheck // until closed
+		c.Read(ctx)                                                        //nolint:errcheck // until closed
 	}))
 	defer echo.Close()
 

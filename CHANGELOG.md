@@ -12,6 +12,9 @@ For platform API 1.2.
   `mimiry availability` lists, and what `--location` takes on `availability`, `session create`
   and `volume create`. Codes from the platform's own vocabulary are refused.
 - **`mimiry availability` has a STOCK column.** With `--all`, a row with no stock reads `none`.
+- **`mimiry session status` shows `mimiry session ssh <id>`** for a session with a published host
+  key, instead of an `ssh` command to the machine's address. A session started before that keeps
+  its direct command.
 
 **Deprecated:** `Provider` on `ProviderPrice`, `Listing` and `SessionBilling`, and
 `Listing.InstanceType`, are no longer sent. `AvailabilityOptions.Provider` and `GPUSpec.Provider`
