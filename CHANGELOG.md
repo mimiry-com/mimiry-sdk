@@ -3,9 +3,10 @@
 Each release of the Go library and the `mimiry` command. Versions follow semver; before v1.0.0, a
 minor release may change the Go functions, and says so here.
 
-## Unreleased
+## v0.6.0
 
-For platform API 1.2.
+For platform API 1.2. Talks to platforms from `0.4.0-live.6` on; `mimiry session ssh` and
+`session proxy` need a platform with the session gateway (API 1.2).
 
 **Changed:**
 - **Locations are location codes:** a country and a number, such as `FI-1`. They are what
