@@ -2136,7 +2136,7 @@
             "properties": {
               "uri": {
                 "type": "string",
-                "description": "Container image URI. It must start with an allowed registry —\n`nvcr.io/`, `docker.io/`, `ghcr.io/`, `gcr.io/` or `quay.io/` —\nor be a Docker Hub short form whose first segment has no `.`\n(`nvidia/cuda:12.3.1-runtime-ubuntu22.04`). A bare name with no\n`/` (`ubuntu:22.04`) is refused.\n",
+                "description": "Container image, as Docker names it:\n`[registry/]name[:tag][@digest]`. The registry must be one of\n`nvcr.io`, `docker.io`, `ghcr.io`, `gcr.io` or `quay.io`. A name\nwith no registry is Docker Hub's, as Docker reads it:\n`ubuntu:22.04` and `nvidia/cuda:12.3.1-runtime-ubuntu22.04` are\nboth Docker Hub images. Anything that is not an image reference\nis refused.\n",
                 "example": "nvcr.io/nvidia/pytorch:24.01-py3"
               }
             }

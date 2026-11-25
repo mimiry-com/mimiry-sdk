@@ -12,6 +12,10 @@ For platform API 1.2.
   `mimiry availability` lists, and what `--location` takes on `availability`, `session create`
   and `volume create`. Codes from the platform's own vocabulary are refused.
 - **`mimiry availability` has a STOCK column.** With `--all`, a row with no stock reads `none`.
+- **An API error names the fields that failed.** `APIError.Error()` adds one line per field
+  (`  image.uri: …`), so `mimiry` no longer stops at "Request validation failed".
+- **Official Docker Hub images in short form work:** `mimiry session create ubuntu:22.04`. The
+  platform used to refuse a name with no `/`.
 - **`mimiry session status` shows `mimiry session ssh <id>`** for a session with a published host
   key, instead of an `ssh` command to the machine's address. A session started before that keeps
   its direct command.

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -51,6 +53,14 @@ func (e *APIError) Error() string {
 	if e.Message != "" && e.Message != e.ErrorCode {
 		b.WriteString(": ")
 		b.WriteString(e.Message)
+	}
+	// Which field failed, and why: without it "Request validation failed"
+	// leaves the caller guessing.
+	for _, f := range e.Errors {
+		fmt.Fprintf(&b, "\n  %s: %s", f.Field, f.Message)
+	}
+	for _, k := range slices.Sorted(maps.Keys(e.Fields)) {
+		fmt.Fprintf(&b, "\n  %s: %s", k, e.Fields[k])
 	}
 	if e.ErrorCode == "" && e.Message == "" {
 		if e.Body != "" {
