@@ -63,6 +63,9 @@ type Session struct {
 
 // SSHInfo is how to reach a running session.
 type SSHInfo struct {
+	// Host is the machine's address, only for sessions started before the
+	// session gateway; reach any other with `mimiry session ssh <id>`, or
+	// Sessions().Connect, and its HostKey.
 	Host     string `json:"host,omitempty"`
 	Port     int    `json:"port"`
 	Username string `json:"username"`

@@ -55,6 +55,13 @@ func (e *SessionFailedError) Error() string {
 	return msg
 }
 
+// reachable reports whether a session's SSH details say how to reach it:
+// its host key, for a session reached through the gateway (which publishes
+// no address), or its address, for one started before the gateway.
+func (i *SSHInfo) reachable() bool {
+	return i != nil && (i.HostKey != "" || i.Host != "")
+}
+
 // WaitReady polls a session until it is ready to use or has finished.
 //
 // It returns the session, with no error, when:
@@ -86,7 +93,7 @@ func (s *SessionsService) WaitReady(ctx context.Context, id string, o WaitOption
 			}
 			return sess, true, nil
 		case SessionRunning:
-			if !sess.SSHEnabled || (sess.SSH != nil && sess.SSH.Host != "") {
+			if !sess.SSHEnabled || sess.SSH.reachable() {
 				return sess, true, nil
 			}
 		}

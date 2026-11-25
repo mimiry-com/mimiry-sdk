@@ -85,6 +85,8 @@ func TestWaitReadyOutcomes(t *testing.T) {
 		wantErr bool
 	}{
 		{"running without SSH", `{"id":"s-1","state":"running","ssh_enabled":false}`, false},
+		// The gateway publishes no address: its host key says how to reach it.
+		{"running through the gateway", sess("running", `,"ssh":{"port":22,"username":"root","host_key":"ssh-ed25519 AAAA"}`), false},
 		{"finished between polls", sess("exited", `,"exit_code":0`), false},
 		{"parked after finishing", sess("idle", ""), false},
 		{"terminated, no exit code", sess("terminated", ""), false},

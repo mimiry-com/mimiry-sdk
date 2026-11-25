@@ -14,6 +14,10 @@ For platform API 1.2.
 - **`mimiry availability` has a STOCK column.** With `--all`, a row with no stock reads `none`.
 - **An API error names the fields that failed.** `APIError.Error()` adds one line per field
   (`  image.uri: …`), so `mimiry` no longer stops at "Request validation failed".
+- **`WaitReady` (and `--wait`) work for sessions reached through the session gateway.** They
+  publish no machine address, only `ssh.host_key`; a running session with either is ready.
+  Earlier releases wait for an address that never comes, so update before the platform stops
+  publishing it.
 - **Official Docker Hub images in short form work:** `mimiry session create ubuntu:22.04`. The
   platform used to refuse a name with no `/`.
 - **`mimiry session status` shows `mimiry session ssh <id>`** for a session with a published host

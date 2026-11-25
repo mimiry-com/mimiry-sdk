@@ -668,7 +668,7 @@
       "get": {
         "operationId": "getSession",
         "summary": "Get session details",
-        "description": "Returns details for a specific session including status and SSH\nconnection info (when running).\n\n### SSH Access\n\nWhile a session is `running` and has `ssh_enabled: true`, the\nresponse includes SSH connection details:\n\n```json\n{\n  \"ssh\": {\n    \"host\": \"gpu-node-1.compute.mimiry.com\",\n    \"port\": 22,\n    \"username\": \"user\"\n  }\n}\n```\n",
+        "description": "Returns details for a specific session including status and SSH\nconnection info (when running).\n\n### SSH Access\n\nWhile a session is `running` and has `ssh_enabled: true`, the\nresponse includes SSH connection details:\n\n```json\n{\n  \"ssh\": {\n    \"port\": 22,\n    \"username\": \"root\",\n    \"host_key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...\"\n  }\n}\n```\n\nConnect with `mimiry session ssh <id>`, which goes through the Mimiry\ngateway and checks that the server presents `host_key` (see\n`POST /api/compute/v1/sessions/{id}/gateway-ticket`). There is no\naddress: the machine accepts no incoming connections. Sessions started\nbefore the gateway have `host` instead of `host_key`, and are reached\nat that address directly.\n",
         "tags": [
           "Sessions"
         ],
@@ -2405,7 +2405,8 @@
             "description": "SSH connection details (only when running and SSH enabled).",
             "properties": {
               "host": {
-                "type": "string"
+                "type": "string",
+                "description": "The machine's address. Only for sessions started before the session gateway, which have no `host_key`. A session with a `host_key` is reached through the gateway (`mimiry session ssh <id>`) and has no address to connect to."
               },
               "port": {
                 "type": "integer"
