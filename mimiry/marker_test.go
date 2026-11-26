@@ -93,6 +93,7 @@ var markerCalls = map[string]func(context.Context, *Client){
 var markerDelegates = map[string]string{
 	"SessionsService.WaitReady":      "SessionsService.Get",
 	"SessionsService.Connect":        "SessionsService.GatewayTicket",
+	"SessionsService.Dial":           "SessionsService.GatewayTicket", // after Get, which is unmarked too
 	"VolumesService.WaitProvisioned": "VolumesService.Get",
 	"OrgsService.WaitOperation":      "OrgsService.Operation",
 }
