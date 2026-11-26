@@ -3,6 +3,20 @@
 Each release of the Go library and the `mimiry` command. Versions follow semver; before v1.0.0, a
 minor release may change the Go functions, and says so here.
 
+## Unreleased
+
+**Added:**
+- **Run commands and copy files in a session** (RC-473), through the session gateway over SSH,
+  signed in with your key and checking the session's published host key:
+  - Go: `Sessions().Dial` returns a `SessionSSH` with `Exec` (each argument passed literally, the
+    exit status returned), `Upload`/`Download` (streams) and `UploadFile`/`DownloadFile`.
+  - `mimiry session exec <id> -- <program> [args]`, `session upload`, `session download`. A
+    downloaded file is created readable by you only and never replaces an existing file unless
+    `--overwrite` is given.
+  - `mimiry rpc`: `sessions.exec`, `sessions.upload`, `sessions.download`, and the error kinds
+    `session` and `local` (PROTOCOL.md).
+  A session started before the gateway (no published host key) is refused.
+
 ## v0.6.0
 
 For platform API 1.2. Talks to platforms from `0.4.0-live.6` on; `mimiry session ssh` and

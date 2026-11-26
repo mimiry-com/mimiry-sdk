@@ -309,3 +309,81 @@ func TestDialRefusesASessionWithoutAPublishedHostKey(t *testing.T) {
 		})
 	}
 }
+
+func TestDownloadFileKeepsTheLocalFileRules(t *testing.T) {
+	user := testSigner(t)
+	srv := newSSHServer(t, user.PublicKey())
+	x, err := dialTest(t, srv, srv.authorizedHostKey(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	remoteDir, local := t.TempDir(), t.TempDir()
+	remote := filepath.Join(remoteDir, "result")
+	if err := os.WriteFile(remote, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(local, "out")
+	if _, err := x.DownloadFile(ctx, remote, dst, false); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(dst); st.Mode().Perm() != 0o600 {
+		t.Fatalf("created %v, want 0600", st.Mode().Perm())
+	}
+
+	if err := os.WriteFile(dst, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.DownloadFile(ctx, remote, dst, false); !errors.Is(err, ErrLocalFileExists) {
+		t.Fatalf("an existing file was not refused: %v", err)
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "mine" {
+		t.Fatalf("the existing file changed to %q", b)
+	}
+
+	// A link where the file would go: refused, and with overwrite replaced
+	// itself, never followed to what it points at.
+	victim := filepath.Join(local, "victim")
+	if err := os.WriteFile(victim, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(local, "link")
+	if err := os.Symlink(victim, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.DownloadFile(ctx, remote, link, false); !errors.Is(err, ErrLocalFileExists) {
+		t.Fatalf("a link in place was not refused: %v", err)
+	}
+	if _, err := x.DownloadFile(ctx, remote, link, true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "keep" {
+		t.Fatalf("the download wrote through the link: %q", b)
+	}
+	if st, _ := os.Lstat(link); st.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("the link is still there")
+	}
+
+	if _, err := x.DownloadFile(ctx, filepath.Join(remoteDir, "missing"), filepath.Join(local, "never"), false); err == nil {
+		t.Fatal("a missing remote file downloaded")
+	}
+	if _, err := os.Lstat(filepath.Join(local, "never")); err == nil {
+		t.Fatal("a failed download left a file behind")
+	}
+	if left, _ := filepath.Glob(filepath.Join(local, ".*mimiry-*")); len(left) != 0 {
+		t.Fatalf("temporary files left behind: %v", left)
+	}
+}
+
+func TestUploadFileRefusesWhatIsNotARegularFile(t *testing.T) {
+	user := testSigner(t)
+	srv := newSSHServer(t, user.PublicKey())
+	x, err := dialTest(t, srv, srv.authorizedHostKey(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.UploadFile(context.Background(), t.TempDir(), filepath.Join(t.TempDir(), "x")); err == nil {
+		t.Fatal("uploaded a directory")
+	}
+}

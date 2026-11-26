@@ -62,6 +62,9 @@ var ops = map[string]func(*call) (any, error){
 		}
 		return cl.c.Sessions().Logs(cl.ctx, p.ID, p.LogsOptions)
 	},
+	"sessions.exec":     sessionsExec,
+	"sessions.upload":   sessionsUpload,
+	"sessions.download": sessionsDownload,
 	"sessions.wait_ready": func(cl *call) (any, error) {
 		var p waitParams
 		if err := cl.decodeID(&p, &p.ID); err != nil {

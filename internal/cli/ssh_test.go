@@ -180,3 +180,18 @@ func TestProxyCarriesStdinAndStdout(t *testing.T) {
 		t.Fatalf("asked %s %s", r.Method, r.Path)
 	}
 }
+
+func TestSessionExecAndCopyRefuseBeforeCalling(t *testing.T) {
+	for _, args := range [][]string{
+		{"session", "exec", "s-1"},
+		{"session", "exec", "s-1", "--"},
+		{"session", "upload", "s-1", "only-one"},
+		{"session", "download", "s-1", "/remote"},
+	} {
+		f := newFakeAPI(t, `{}`)
+		code, _, stderr := f.run(t, args...)
+		if code != 2 || len(f.requests()) != 0 {
+			t.Errorf("%v: exit %d, %d requests, stderr %q", args, code, len(f.requests()), stderr)
+		}
+	}
+}

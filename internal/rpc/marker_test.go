@@ -38,6 +38,9 @@ var opParams = map[string]string{
 	"sessions.terminate":  `{"id":"s-1"}`,
 	"sessions.logs":       `{"id":"s-1"}`,
 	"sessions.wait_ready": `{"id":"s-1"}`,
+	"sessions.exec":       `{"id":"s-1","argv":["true"]}`,
+	"sessions.upload":     `{"id":"s-1","local_path":"/dev/null","remote_path":"/tmp/x"}`,
+	"sessions.download":   `{"id":"s-1","local_path":"/nonexistent/x","remote_path":"/tmp/x"}`,
 
 	"volumes.create":           `{"name":"x"}`,
 	"volumes.list":             `{}`,

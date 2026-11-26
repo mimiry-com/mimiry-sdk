@@ -62,6 +62,10 @@ type Progress struct {
 //	network   no answer from the API at all
 //	timeout   the call's timeout ended it
 //	failed    a wait ended in failure; Resource is the session or volume
+//	session   a session could not be used: not_reachable (not running, no SSH,
+//	          no published host key), not_connected (its machine is not on the
+//	          gateway yet), connection_lost (no exit status arrived)
+//	local     a local file: file_exists (a download without overwrite)
 //	internal  anything else — a bug
 type Error struct {
 	Kind              string              `json:"kind"`
@@ -217,6 +221,14 @@ func classify(err error) *Error {
 		e.Kind, e.Code = "config", "invalid_host"
 	case errors.Is(err, mimiry.ErrKeyUnavailable):
 		e.Kind, e.Code = "config", "key_unavailable"
+	case errors.Is(err, mimiry.ErrSessionNotReachable):
+		e.Kind, e.Code = "session", "not_reachable"
+	case errors.Is(err, mimiry.ErrSessionNotConnected):
+		e.Kind, e.Code = "session", "not_connected"
+	case errors.Is(err, mimiry.ErrConnectionLost):
+		e.Kind, e.Code = "session", "connection_lost"
+	case errors.Is(err, mimiry.ErrLocalFileExists):
+		e.Kind, e.Code = "local", "file_exists"
 	default:
 		e.Kind = "internal"
 	}

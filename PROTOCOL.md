@@ -50,6 +50,8 @@ Branch on `kind` first:
 | `network` | No answer from the API at all. | |
 | `timeout` | `timeout_seconds` ended the call. | |
 | `failed` | A wait ended in failure. | `resource`: the session, volume or organisation operation as last read. |
+| `session` | A session could not be used for `sessions.exec`, `upload` or `download`. | `code`: `not_reachable` (not running, started without SSH, or with no published host key), `not_connected` (its machine is not on the gateway yet: retry shortly) or `connection_lost` (the connection ended before the command's exit status: it may or may not have run). |
+| `local` | A local file. | `code`: `file_exists` (a download without `overwrite`). |
 | `internal` | Anything else, which is a bug. | |
 
 A key that needs a passphrase cannot be unlocked here, because there is nobody to ask. It must be
@@ -97,6 +99,9 @@ ends the operation `failed`. `orgs.wait_operation` follows it to the outcome.
 | `sessions.terminate` | `id` | `{id, status, message, status_url}` |
 | `sessions.logs` | `id`, `tail`, `since` | `{session_id, logs, truncated, lines_requested}` |
 | `sessions.wait_ready` | `id`, `interval_seconds`, `not_found_grace_seconds` | The ready or finished session; on failure, kind `failed`. |
+| `sessions.exec` | `id`, `argv` (the program and its arguments, each passed literally; for a shell, `["sh","-c","…"]`), `stdin` (base64) | `{exit_status, stdout, stderr}`, both base64, at most 8 MiB each; `stdout_truncated` / `stderr_truncated` when cut. A non-zero exit status is a result, not an error. |
+| `sessions.upload` | `id`, `local_path` (a regular file), `remote_path` | `{bytes}`. The file appears in the session whole, with the local file's permission bits. |
+| `sessions.download` | `id`, `remote_path` (a regular file), `local_path`, `overwrite` | `{bytes}`. Created 0600; an existing file or link at `local_path` is refused unless `overwrite`, and then replaced, never written through. Nothing is left behind on failure. |
 | `volumes.create` | The API's create-volume body. | `{id, status, ...}` |
 | `volumes.list` | `org_id`, `state`, `state_not`, `operation`, `operation_not`, `attached`, `updated_after`, `updated_before`, `limit`, `offset`, `all` | A page of volumes. |
 | `volumes.get` | `id` | A volume. |
@@ -128,6 +133,9 @@ ends the operation `failed`. `orgs.wait_operation` follows it to the outcome.
 | `orgs.accept_invitation` | `token` | Accepted. |
 | `orgs.operation` | `id` | `{request_id, status, result, error, created_at, updated_at}`. Kept for 15 minutes. |
 | `orgs.wait_operation` | `id`, `interval_seconds`, `not_found_grace_seconds` | The completed operation; on failure, kind `failed`. |
+
+`sessions.exec`, `upload` and `download` go through the Mimiry gateway over SSH, signed in with
+the key and checking the session's published host key. Each call opens its own connection.
 
 ## Compatibility
 

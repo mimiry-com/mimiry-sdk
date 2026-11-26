@@ -16,9 +16,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -335,4 +337,63 @@ func (x *SessionSSH) Download(ctx context.Context, remotePath string, w io.Write
 		return nil
 	})
 	return n, err
+}
+
+// UploadFile copies the regular file at localPath to remotePath, with the
+// local file's permission bits.
+func (x *SessionSSH) UploadFile(ctx context.Context, localPath, remotePath string) (int64, error) {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if !st.Mode().IsRegular() {
+		return 0, fmt.Errorf("mimiry: %s is not a regular file", localPath)
+	}
+	return x.Upload(ctx, f, remotePath, st.Mode().Perm())
+}
+
+// ErrLocalFileExists is returned by DownloadFile when localPath exists and
+// overwrite was not asked for.
+var ErrLocalFileExists = errors.New("mimiry: the local file exists")
+
+// DownloadFile copies remotePath to localPath, a path the caller names.
+// The file is created readable by its owner only (0600): what a session
+// produces is the session owner's data. An existing file, or a link in its
+// place, is refused unless overwrite is set; then the new file replaces it
+// whole, and a link is replaced, never followed. A failed copy leaves
+// nothing behind.
+func (x *SessionSSH) DownloadFile(ctx context.Context, remotePath, localPath string, overwrite bool) (int64, error) {
+	if localPath == "" {
+		return 0, errors.New("mimiry: DownloadFile needs a local path")
+	}
+	var f *os.File
+	var err error
+	if overwrite {
+		f, err = os.CreateTemp(filepath.Dir(localPath), "."+filepath.Base(localPath)+".mimiry-*")
+	} else {
+		f, err = os.OpenFile(localPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			return 0, fmt.Errorf("%w: %s", ErrLocalFileExists, localPath)
+		}
+	}
+	if err != nil {
+		return 0, err
+	}
+	n, err := x.Download(ctx, remotePath, f)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && overwrite {
+		err = os.Rename(f.Name(), localPath)
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return 0, err
+	}
+	return n, nil
 }
